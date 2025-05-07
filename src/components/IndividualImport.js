@@ -10,9 +10,23 @@ const IndividualImport = () => {
                         Key File
                         <span class="ml-2">▾</span>
                     </button>
-                    <div id="keyfile-dropdown" class="hidden flex-col mt-2 space-y-2">
-                        <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Select File</button>
-                        <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Keyfile Passphrase</button>
+                    <div id="keyfile-dropdown" class="hidden mt-2">
+                        <div class="flex flex-col sm:flex-row sm:space-x-4 space-y-4 sm:space-y-0">
+                            <div class="flex-1">
+                                <div class="text-gray-400 text-xs sm:text-sm mb-1">Morse</div>
+                                <div class="flex flex-col space-y-2">
+                                    <button class="select-file-btn w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Select File</button>
+                                    <button class="keyfile-passphrase-btn w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Keyfile Passphrase</button>
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <div class="text-gray-400 text-xs sm:text-sm mb-1">Shannon</div>
+                                <div class="flex flex-col space-y-2">
+                                    <button class="select-file-btn w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Select File</button>
+                                    <button class="keyfile-passphrase-btn w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Keyfile Passphrase</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <!-- Private Key Dropdown -->
@@ -21,13 +35,30 @@ const IndividualImport = () => {
                         Private Key
                         <span class="ml-2">▾</span>
                     </button>
-                    <div id="privatekey-dropdown" class="hidden flex-col mt-2 space-y-2">
-                        <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Private Key</button>
-                        <p class="text-white text-xs sm:text-sm my-2">Please create a temporary passphrase to encrypt your Private key during this session. It will be required to confirm transactions.</p>
-                        <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full flex items-center justify-between transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">
-                            Session Passphrase
-                            <span class="ml-2">👁</span>
-                        </button>
+                    <div id="privatekey-dropdown" class="hidden mt-2">
+                        <p class="text-white text-xs sm:text-sm mb-4 text-center">Please create a temporary passphrase to encrypt your Private key during this session. It will be required to confirm transactions.</p>
+                        <div class="flex flex-col sm:flex-row sm:space-x-4 space-y-4 sm:space-y-0">
+                            <div class="flex-1">
+                                <div class="text-gray-400 text-xs sm:text-sm mb-1">Morse</div>
+                                <div class="flex flex-col space-y-2">
+                                    <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Private Key</button>
+                                    <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full flex items-center justify-between transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">
+                                        Session Passphrase
+                                        <span class="ml-2">👁</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="flex-1">
+                                <div class="text-gray-400 text-xs sm:text-sm mb-1">Shannon</div>
+                                <div class="flex flex-col space-y-2">
+                                    <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">Private Key</button>
+                                    <button class="w-full border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full flex items-center justify-between transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">
+                                        Session Passphrase
+                                        <span class="ml-2">👁</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <button id="return-btn" class="w-full sm:w-64 mt-6 border-2 border-gray-500 text-gray-200 bg-black font-urbanist font-semibold py-1 sm:py-2 px-4 sm:px-6 rounded-full flex items-center justify-center transition-colors duration-200 hover:bg-gray-700 text-sm sm:text-base">

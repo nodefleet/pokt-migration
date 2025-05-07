@@ -25,31 +25,30 @@ function renderMainContent() {
 
 function renderBulkImport() {
     document.getElementById('main-content').innerHTML = BulkImport();
-  
-    // Existing event listeners
-    const uploadInput = document.getElementById('bulk-upload-input');
-    const migrateBtn = document.getElementById('bulk-migrate-btn');
-    if (uploadInput) {
-      uploadInput.addEventListener('change', () => {
-        renderBulkImportTable();
-      });
-    }
-    if (migrateBtn) {
-      migrateBtn.addEventListener('click', () => {
-        renderBulkImportTable();
-      });
-    }
-  
+
+    // Event delegation for "Upload json file" buttons (targets all instances)
+    document.getElementById('main-content').addEventListener('change', (event) => {
+        if (event.target.matches('input[id^="bulk-upload-input"]')) {
+            renderBulkImportTable();
+        }
+    });
+
+    // Event delegation for "Bulk Migrate" buttons (targets all instances)
+    document.getElementById('main-content').addEventListener('click', (event) => {
+        if (event.target.classList.contains('bulk-migrate-btn')) {
+            renderBulkImportTable();
+        }
+    });
+
     // Add event listener for Return button
     const returnBtnBulk = document.getElementById('return-btn-bulk');
     if (returnBtnBulk) {
-      returnBtnBulk.addEventListener('click', () => {
-        document.getElementById('header').innerHTML = Header();
-        renderMainContent();
-      });
+        returnBtnBulk.addEventListener('click', () => {
+            document.getElementById('header').innerHTML = Header();
+            renderMainContent();
+        });
     }
-  }
-  
+}
 
 function renderBulkImportTable() {
     document.getElementById('main-content').innerHTML = BulkImportTable();
@@ -81,25 +80,41 @@ function renderIndividualImport() {
         if (!isOpen) keyfileDropdown.classList.add('hidden');
     });
 
-    // Add event listener for Select File option
-    const selectFileOption = keyfileDropdown.querySelector('button');
-    if (selectFileOption) {
-        selectFileOption.addEventListener('click', () => {
+    // Event delegation for "Select File" buttons (targets all instances)
+    document.getElementById('main-content').addEventListener('click', (event) => {
+        if (event.target.classList.contains('select-file-btn')) {
             walletAddress = '061a3...xaf39';
             showTransactions = false;
             renderWalletDashboard();
-        });
-    }
+        }
+    });
 
-    // Add event listener for Private Key option
-    const privateKeyOption = privatekeyDropdown.querySelector('button');
-    if (privateKeyOption) {
-        privateKeyOption.addEventListener('click', () => {
+    // Event delegation for "Keyfile Passphrase" buttons (targets all instances)
+    document.getElementById('main-content').addEventListener('click', (event) => {
+        if (event.target.classList.contains('keyfile-passphrase-btn')) {
             walletAddress = '061a3...xaf39';
             showTransactions = false;
             renderWalletDashboard();
-        });
-    }
+        }
+    });
+
+    // Event delegation for "Private Key" buttons (targets all instances)
+    document.getElementById('main-content').addEventListener('click', (event) => {
+        if (event.target.matches('#privatekey-dropdown button:not(:last-child)')) {
+            walletAddress = '061a3...xaf39';
+            showTransactions = false;
+            renderWalletDashboard();
+        }
+    });
+
+    // Event delegation for "Session Passphrase" buttons (targets all instances)
+    document.getElementById('main-content').addEventListener('click', (event) => {
+        if (event.target.matches('#privatekey-dropdown button:last-child')) {
+            walletAddress = '061a3...xaf39';
+            showTransactions = false;
+            renderWalletDashboard();
+        }
+    });
 
     // Add event listener for Return button
     const returnBtn = document.getElementById('return-btn');

@@ -8,6 +8,7 @@ module.exports = {
     extend: {
       fontFamily: {
         'urbanist': ['Urbanist', 'sans-serif'],
+        'kumbh-sans': ['Kumbh Sans', 'sans-serif'],
       },
       colors: {
         'pokt-blue': '#00F5FF',
@@ -17,4 +18,4 @@ module.exports = {
     },
   },
   plugins: [],
-} 
+}
