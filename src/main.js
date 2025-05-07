@@ -9,6 +9,13 @@ import BulkImportTable from './components/BulkImportTable.js';
 let walletAddress = null;
 let showTransactions = false;
 
+// Remove existing event listeners to prevent duplicates
+function removeEventListeners() {
+    const mainContent = document.getElementById('main-content');
+    const newMainContent = mainContent.cloneNode(true);
+    mainContent.parentNode.replaceChild(newMainContent, mainContent);
+}
+
 function renderMainContent() {
     document.getElementById('main-content').innerHTML = MainContent();
     // Add event listener for Individual Import button
@@ -24,11 +31,13 @@ function renderMainContent() {
 }
 
 function renderBulkImport() {
+    removeEventListeners(); // Clean up old listeners
     document.getElementById('main-content').innerHTML = BulkImport();
 
-    // Event delegation for "Upload json file" buttons (targets all instances)
+    // Event delegation for "Upload json file" inputs (targets all instances)
     document.getElementById('main-content').addEventListener('change', (event) => {
         if (event.target.matches('input[id^="bulk-upload-input"]')) {
+            console.log('File input changed:', event.target.id);
             renderBulkImportTable();
         }
     });
@@ -36,6 +45,7 @@ function renderBulkImport() {
     // Event delegation for "Bulk Migrate" buttons (targets all instances)
     document.getElementById('main-content').addEventListener('click', (event) => {
         if (event.target.classList.contains('bulk-migrate-btn')) {
+            console.log('Bulk Migrate button clicked:', event.target.textContent);
             renderBulkImportTable();
         }
     });
@@ -51,6 +61,7 @@ function renderBulkImport() {
 }
 
 function renderBulkImportTable() {
+    removeEventListeners(); // Clean up old listeners
     document.getElementById('main-content').innerHTML = BulkImportTable();
     // Add event listener for return button
     const returnBtn = document.getElementById('bulk-return-btn');
@@ -62,6 +73,7 @@ function renderBulkImportTable() {
 }
 
 function renderIndividualImport() {
+    removeEventListeners(); // Clean up old listeners
     document.getElementById('main-content').innerHTML = IndividualImport();
     // Dropdown logic
     const keyfileBtn = document.getElementById('keyfile-dropdown-btn');
@@ -83,6 +95,7 @@ function renderIndividualImport() {
     // Event delegation for "Select File" buttons (targets all instances)
     document.getElementById('main-content').addEventListener('click', (event) => {
         if (event.target.classList.contains('select-file-btn')) {
+            console.log('Select File button clicked:', event.target.textContent);
             walletAddress = '061a3...xaf39';
             showTransactions = false;
             renderWalletDashboard();
@@ -92,6 +105,7 @@ function renderIndividualImport() {
     // Event delegation for "Keyfile Passphrase" buttons (targets all instances)
     document.getElementById('main-content').addEventListener('click', (event) => {
         if (event.target.classList.contains('keyfile-passphrase-btn')) {
+            console.log('Keyfile Passphrase button clicked:', event.target.textContent);
             walletAddress = '061a3...xaf39';
             showTransactions = false;
             renderWalletDashboard();
@@ -101,6 +115,7 @@ function renderIndividualImport() {
     // Event delegation for "Private Key" buttons (targets all instances)
     document.getElementById('main-content').addEventListener('click', (event) => {
         if (event.target.matches('#privatekey-dropdown button:not(:last-child)')) {
+            console.log('Private Key button clicked:', event.target.textContent);
             walletAddress = '061a3...xaf39';
             showTransactions = false;
             renderWalletDashboard();
@@ -110,6 +125,7 @@ function renderIndividualImport() {
     // Event delegation for "Session Passphrase" buttons (targets all instances)
     document.getElementById('main-content').addEventListener('click', (event) => {
         if (event.target.matches('#privatekey-dropdown button:last-child')) {
+            console.log('Session Passphrase button clicked:', event.target.textContent);
             walletAddress = '061a3...xaf39';
             showTransactions = false;
             renderWalletDashboard();
@@ -129,6 +145,7 @@ function renderIndividualImport() {
 }
 
 function renderWalletDashboard() {
+    removeEventListeners(); // Clean up old listeners
     document.getElementById('header').innerHTML = Header(walletAddress);
     document.getElementById('main-content').innerHTML = WalletDashboard(walletAddress, showTransactions);
     // Add event listener for return button

@@ -29,7 +29,7 @@ const BulkImport = () => {
                                         <span class="ml-auto text-xl sm:text-2xl">⇪</span>
                                     </div>
                                 </label>
-                                <button class="bulk-migrate-btn-1 w-full sm:w-64 bg-orange-400 hover:bg-orange-500 text-black font-bold font-kumbh-sans py-2 sm:py-4 px-4 sm:px-8 rounded-full text-base sm:text-lg transition-colors duration-200">Bulk Migrate</button>
+                                <button class="bulk-migrate-btn w-full sm:w-64 bg-orange-400 hover:bg-orange-500 text-black font-bold font-kumbh-sans py-2 sm:py-4 px-4 sm:px-8 rounded-full text-base sm:text-lg transition-colors duration-200">Bulk Migrate</button>
                             </div>
                         </div>
                     </div>
