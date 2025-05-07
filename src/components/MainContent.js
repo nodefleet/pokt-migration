@@ -1,7 +1,7 @@
 const MainContent = () => {
     return `
         <div class="text-center">
-            <h1 class="text-4xl font-bold mb-4 font-urbanist">Welcome to Pocket Shannon</h1>
+            <h1 class="text-4xl font-bold mb-4 font-urbanist">Welcome to Pokt Shannon</h1>
             <p class="text-blue-500 mb-8 font-urbanist">This is an open-source interface to provide easy access<br>and management of your POKT cryptocurrency.</p>
             <div class="flex justify-center space-x-4">
                 <button class="w-56 border-2 border-blue-500 text-blue-500 hover:bg-blue-600 font-urbanist font-bold py-2 px-6 rounded-full transition-colors duration-200">
