@@ -1,11 +1,15 @@
 import React from 'react';
 import { motion } from 'framer-motion';
+import nodefleetLogo from '../assets/images/nodefleet.png';
+import xIcon from '../assets/images/x.svg';
+import discordIcon from '../assets/images/discord.svg';
+import githubIcon from '../assets/images/github.svg';
 
 const Footer: React.FC = () => {
     const socialLinks = [
-        { href: 'https://x.com/nodefleet', icon: '/src/assets/images/x.svg', alt: 'X' },
-        { href: 'https://discord.gg/nodefleet', icon: '/src/assets/images/discord.svg', alt: 'Discord' },
-        { href: 'https://github.com/nodefleet', icon: '/src/assets/images/github.svg', alt: 'GitHub' }
+        { href: 'https://x.com/nodefleet', icon: xIcon, alt: 'X' },
+        { href: 'https://discord.gg/nodefleet', icon: discordIcon, alt: 'Discord' },
+        { href: 'https://github.com/nodefleet', icon: githubIcon, alt: 'GitHub' }
     ];
 
     return (
@@ -24,7 +28,7 @@ const Footer: React.FC = () => {
                         transition={{ delay: 0.3 }}
                     >
                         <img
-                            src="/src/assets/images/nodefleet.png"
+                            src={nodefleetLogo}
                             alt="NodeFleet Logo"
                             className="h-8 w-auto"
                         />
@@ -37,7 +41,7 @@ const Footer: React.FC = () => {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: 0.4 }}
                     >
-                        {socialLinks.map((link, index) => (
+                        {socialLinks.map((link) => (
                             <motion.a
                                 key={link.alt}
                                 href={link.href}

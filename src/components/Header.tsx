@@ -1,6 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { HeaderProps } from '../types';
+import nodefleetLogo from '../assets/images/nodefleet.png';
+import poktLogo from '../assets/images/pokt.png';
 
 const Header: React.FC<HeaderProps> = ({ walletAddress }) => {
     return (
@@ -18,12 +20,12 @@ const Header: React.FC<HeaderProps> = ({ walletAddress }) => {
                     transition={{ delay: 0.2 }}
                 >
                     <img
-                        src="/src/assets/images/nodefleet.png"
+                        src={nodefleetLogo}
                         alt="NodeFleet Logo"
                         className="h-10 w-auto"
                     />
                     <img
-                        src="/src/assets/images/pokt.png"
+                        src={poktLogo}
                         alt="POKT Network"
                         className="h-8 w-auto"
                     />
