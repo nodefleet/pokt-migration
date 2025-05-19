@@ -7,3 +7,4 @@ node_modules/
 /public/x.svg
 /public/github.svg
 web-wallet-v2/
+.DS_Store
