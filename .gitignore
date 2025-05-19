@@ -2,9 +2,5 @@
 /node_modules
 node_modules/
 /build
-/public/favicon.ico
-/public/pokt.png
-/public/x.svg
-/public/github.svg
 web-wallet-v2/
 .DS_Store
