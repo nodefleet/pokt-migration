@@ -147,12 +147,6 @@ export class WalletService {
         const savedIsMainnet = storageService.getSync<boolean>('isMainnet');
         const savedNetworkType = storageService.getSync<NetworkType>('pokt_network_type') || 'shannon';
 
-        console.log('🎯 detectNetworkFromAddress: RESPECTING saved config:', {
-            address: address.substring(0, 10) + '...',
-            savedIsMainnet,
-            savedNetworkType
-        });
-
         // Si hay configuración guardada, USARLA SIEMPRE
         if (savedIsMainnet !== null && savedIsMainnet !== undefined) {
             return {
@@ -208,15 +202,15 @@ export class WalletService {
                     let finalIsMainnet: boolean;
 
                     if (currentIsMainnet !== null && currentIsMainnet !== undefined) {
-                        finalIsMainnet = currentIsMainnet;
-                        this.isMainnet = currentIsMainnet;
-                        console.log(`🎯 validateAndCleanWallets: RESPECTING existing configuration: ${currentIsMainnet === true ? 'mainnet' : 'testnet'}`);
+                        finalIsMainnet = Boolean(currentIsMainnet === true); // FORZAR booleano válido
+                        this.isMainnet = finalIsMainnet;
+                        console.log(`🎯 validateAndCleanWallets: RESPECTING existing configuration: ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
                     } else {
                         // Solo si NO hay configuración existente, usar detección
-                        finalIsMainnet = correctConfig.isMainnet;
-                        this.isMainnet = correctConfig.isMainnet;
-                        await storageService.set('isMainnet', correctConfig.isMainnet);
-                        console.log(`🔧 validateAndCleanWallets: NO existing config - setting from detection: ${correctConfig.isMainnet === true ? 'mainnet' : 'testnet'}`);
+                        finalIsMainnet = Boolean(correctConfig.isMainnet === true); // FORZAR booleano válido
+                        this.isMainnet = finalIsMainnet;
+                        await storageService.set('isMainnet', finalIsMainnet);
+                        console.log(`🔧 validateAndCleanWallets: NO existing config - setting from detection: ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
                     }
 
                     // Actualizar localStorage
@@ -225,8 +219,8 @@ export class WalletService {
                     console.log(`🔧 Network validated: ${correctConfig.network} ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
 
                     // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-                    const isTestnet = finalIsMainnet === false; // Si es false (testnet), entonces isTestnet = true
-                    console.log(`🔍 DEBUG validateAndCleanWallets: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet} - EXPECTED: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
+                    const isTestnet = !finalIsMainnet; // Negar directamente - más simple y confiable
+                    console.log(`🔍 DEBUG validateAndCleanWallets: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet} (types: ${typeof finalIsMainnet}, ${typeof isTestnet}) - EXPECTED: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
 
                     // Cambiar a la red usando la configuración FINAL
                     await this.walletManager.switchNetwork(correctConfig.network, isTestnet);
@@ -321,7 +315,7 @@ export class WalletService {
             // storageService.set(STORAGE_KEYS.NETWORK, finalIsMainnet === true ? 'mainnet' : 'testnet');
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = finalIsMainnet === false; // Si es false (testnet), entonces isTestnet = true
+            const isTestnet = !finalIsMainnet; // Negar directamente - más simple y confiable
             console.log(`🔍 DEBUG importShannonPrivateKey: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet} - EXPECTED: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
 
             await this.walletManager.switchNetwork(finalNetwork, isTestnet);
@@ -481,7 +475,7 @@ export class WalletService {
             await storageService.set('isMainnet', finalIsMainnet);
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = finalIsMainnet === false; // Si es false (testnet), entonces isTestnet = true
+            const isTestnet = !finalIsMainnet; // Negar directamente - más simple y confiable
             console.log(`🔍 DEBUG importShannonWallet: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet}`);
 
             // Configurar WalletManager con la red detectada
@@ -625,8 +619,11 @@ export class WalletService {
      */
     async switchNetwork(network: NetworkType, isMainnet: boolean = false): Promise<void> {
         try {
+            // FORZAR conversión a booleano para evitar problemas de tipo
+            const isMainnetBool = Boolean(isMainnet === true);
+
             this.networkType = network;
-            this.isMainnet = isMainnet;
+            this.isMainnet = isMainnetBool;
             storageService.set(STORAGE_KEYS.NETWORK_TYPE, network);
             // NO SOBRESCRIBIR la selección manual del usuario
             // storageService.set(STORAGE_KEYS.NETWORK, isMainnet === true ? 'mainnet' : 'testnet');
@@ -639,8 +636,8 @@ export class WalletService {
             }
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = isMainnet === false; // Si es false (testnet), entonces isTestnet = true
-            console.log(`🔍 DEBUG switchNetwork: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
+            const isTestnet = !isMainnetBool; // Negar directamente - más simple y confiable
+            console.log(`🔍 DEBUG switchNetwork: isMainnet=${isMainnetBool}, isTestnet=${isTestnet} (types: ${typeof isMainnetBool}, ${typeof isTestnet})`);
             console.log(`🔍 DEBUG switchNetwork: About to call walletManager.switchNetwork(${network}, ${isTestnet})`);
 
             // Solo para Shannon intentar conectar

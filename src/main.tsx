@@ -180,8 +180,9 @@ const App: React.FC = () => {
                         setNetworkType(networkFromStorage);
 
                         // USAR LA CONFIGURACIÓN YA CARGADA (no volver a cargarla)
-                        const finalIsMainnet = cachedIsMainnet !== null && cachedIsMainnet !== undefined ? cachedIsMainnet : false;
+                        const finalIsMainnet = Boolean(cachedIsMainnet === true); // FORZAR booleano válido
                         console.log(`📍 Using final config for wallet loading: ${networkFromStorage} ${finalIsMainnet ? 'mainnet' : 'testnet'}`);
+                        console.log(`🔍 DEBUG finalIsMainnet type: ${typeof finalIsMainnet}, value: ${finalIsMainnet}`);
 
                         // CONFIGURAR WALLETSERVICE con la configuración cacheada
                         if (networkFromStorage === 'morse') {
@@ -592,7 +593,6 @@ const App: React.FC = () => {
                                 />
                             ) : (
                                 (() => {
-                                    console.log('❌ /wallet route - NO wallet address, redirecting to home');
                                     return <Navigate to="/" replace />;
                                 })()
                             );

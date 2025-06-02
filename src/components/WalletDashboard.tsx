@@ -20,11 +20,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     walletAddress,
     balance,
     transactions: initialTransactions,
-    onSend,
-    onReceive,
     onSwap,
-    onStake,
-    onViewTransactions,
     network = 'shannon',
     isMainnet = false,
     walletManager,
@@ -42,7 +38,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const [error, setError] = useState<string | null>(null);
     const navigate = useNavigate();
 
-    const fetchBalanceAndTransactions = async () => {
+    const fetchBalanceAndTransactions = useCallback(async () => {
         try {
             setLoading(true);
 
@@ -75,7 +71,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         } finally {
             setLoading(false);
         }
-    };
+    }, [walletManager, walletAddress]);
 
     useEffect(() => {
         // Solo intentar obtener datos si tenemos una dirección válida
@@ -90,7 +86,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             return () => clearInterval(intervalId);
         }
-    }, [walletManager, walletAddress]);
+    }, [walletManager, walletAddress, network, isMainnet, fetchBalanceAndTransactions]);
 
     // Cargar las wallets guardadas al iniciar
     useEffect(() => {
@@ -112,6 +108,21 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         loadStoredWallets();
     }, []);
 
+    // Escuchar cambios en el storage para actualizar automáticamente
+    useEffect(() => {
+        const handleStorageUpdate = () => {
+            console.log('📦 Storage updated in WalletDashboard - refreshing data...');
+            fetchBalanceAndTransactions();
+        };
+
+        // Escuchar eventos customizados de storage
+        window.addEventListener('storageUpdate', handleStorageUpdate);
+
+        return () => {
+            window.removeEventListener('storageUpdate', handleStorageUpdate);
+        };
+    }, [fetchBalanceAndTransactions]);
+
     // Función para intentar reconectar manualmente
     const handleReconnect = async () => {
         try {
@@ -123,7 +134,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             setError(null);
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = isMainnet === false; // Si es false (testnet), entonces isTestnet = true
+            const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
             console.log(`🔍 DEBUG WalletDashboard handleReconnect: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
             await walletManager.switchNetwork(network, isTestnet);
@@ -147,7 +158,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             setError(null);
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = isMainnet === false; // Si es false (testnet), entonces isTestnet = true
+            const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
             console.log(`🔍 DEBUG WalletDashboard handleSwitchToShannon: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
             await walletManager.switchNetwork('shannon', isTestnet);
@@ -274,7 +285,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                             animate={{ opacity: 1, height: 'auto', marginBottom: 24 }}
                             exit={{ opacity: 0, height: 0, marginBottom: 0 }}
                         >
-                            <p><strong>Aviso:</strong> {ERROR_MESSAGES.MORSE_DEPRECATED}</p>
+                            <p><strong>Advice:</strong> {ERROR_MESSAGES.MORSE_DEPRECATED}</p>
                         </motion.div>
                     )}
 
@@ -352,10 +363,10 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                 >
                                     <h3 className="text-lg font-semibold text-white mb-3">
                                         <i className="fas fa-exclamation-triangle text-yellow-400 text-2xl mr-2"></i>
-                                        Conectividad limitada
+                                        Limited connectivity
                                     </h3>
                                     <p className="text-gray-300 mb-4">
-                                        {isMorseNetwork ? ERROR_MESSAGES.MORSE_DEPRECATED : 'No se pudo conectar a la red. Algunas funciones estarán limitadas.'}
+                                        {isMorseNetwork ? ERROR_MESSAGES.MORSE_DEPRECATED : 'Could not connect to the network. Some features will be limited.'}
                                     </p>
                                     <div className="mt-3 flex flex-wrap gap-2 justify-center">
                                         <button
