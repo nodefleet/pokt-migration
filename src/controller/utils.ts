@@ -57,7 +57,7 @@ export function formatDate(timestamp: number): string {
  * @param network - Red a usar para los decimales
  * @returns {string} Balance formateado
  */
-export function formatBalance(balance: string, network = NETWORKS.TESTNET): string {
+export function formatBalance(balance: string, network = NETWORKS.SHANNON.TESTNET): string {
     const amount = fromUpokt(balance, network.decimals);
     return `${amount} ${network.symbol}`;
 } 
