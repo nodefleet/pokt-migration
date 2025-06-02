@@ -27,12 +27,16 @@
   "dependencies": {
     "@cosmjs/proto-signing": "^0.33.1",
     "@cosmjs/stargate": "^0.33.1",
+    "@tanstack/react-query": "^5.79.0",
     "@types/react": "^19.1.4",
     "@types/react-dom": "^19.1.5",
+    "buffer": "^6.0.3",
     "cosmjs-types": "^0.9.0",
     "framer-motion": "^12.12.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.6.0"
+    "react-router-dom": "^7.6.0",
+    "wouter": "^3.7.1",
+    "zustand": "^5.0.5"
   }
 }

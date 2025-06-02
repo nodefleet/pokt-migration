@@ -4,3 +4,4 @@ node_modules/
 /build
 web-wallet-v2/
 .DS_Store
+wallet/
