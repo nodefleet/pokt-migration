@@ -10,7 +10,19 @@ export default defineConfig({
     },
     server: {
         port: 5173,
-        open: true
+        open: true,
+        proxy: {
+            '/api/poktradar': {
+                target: 'https://poktradar.io',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/poktradar/, '/api'),
+                secure: true,
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                }
+            }
+        }
     },
     resolve: {
         alias: {

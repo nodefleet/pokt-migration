@@ -25,24 +25,23 @@ export const NETWORKS = {
     MORSE: {
         MAINNET: {
             name: 'Morse Mainnet',
+            prefix: "pokt",
             rpcUrls: [
-                'https://seed1.mainnet.pokt.network/',
-                'https://mainnet.pokt.network',
+                "https://pokt-archival.rpc.grove.city/v1/440ae1fc"
             ],
             chainId: 'mainnet',
             symbol: 'POKT',
-            decimals: 6,
-            prefix: 'pokt'
+            decimals: 6
         },
         TESTNET: {
             name: 'Morse Testnet',
+            prefix: "pokt",
             rpcUrls: [
-                'https://node1.testnet.pokt.network',
+                "https://pokt-archival.rpc.grove.city/v1/440ae1fc"
             ],
             chainId: 'testnet',
             symbol: 'POKT',
-            decimals: 6,
-            prefix: 'pokt'
+            decimals: 6
         }
     }
 };

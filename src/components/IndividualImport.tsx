@@ -6,8 +6,8 @@ import { NetworkType } from '../controller/WalletManager';
 import { useNavigate } from 'react-router-dom';
 
 const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletImport, onCreateWallet }) => {
-    const [keyfileOpen, setKeyfileOpen] = useState(false);
-    const [privateKeyOpen, setPrivateKeyOpen] = useState(false);
+    const [morseOpen, setMorseOpen] = useState(false);
+    const [shannonOpen, setShannonOpen] = useState(false);
     const [morseInput, setMorseInput] = useState('');
     const [shannonInput, setShannonInput] = useState('');
     const [morsePassword, setMorsePassword] = useState('');
@@ -16,28 +16,25 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     const [showMorseWarning, setShowMorseWarning] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [activeTab, setActiveTab] = useState('shannon');
-    const [keyFileInput, setKeyFileInput] = useState('');
-    const [privateKeyInput, setPrivateKeyInput] = useState('');
-    const [password, setPassword] = useState('');
     const [morseError, setMorseError] = useState('');
     const [morseLoading, setMorseLoading] = useState(false);
+    const [showGuide, setShowGuide] = useState(false);
 
     const navigate = useNavigate();
 
-    const toggleKeyfile = () => {
-        setKeyfileOpen(!keyfileOpen);
-        if (!keyfileOpen) setPrivateKeyOpen(false);
+    const toggleMorse = () => {
+        setMorseOpen(!morseOpen);
+        if (!morseOpen) setShannonOpen(false);
     };
 
-    const togglePrivateKey = () => {
-        setPrivateKeyOpen(!privateKeyOpen);
-        if (!privateKeyOpen) setKeyfileOpen(false);
+    const toggleShannon = () => {
+        setShannonOpen(!shannonOpen);
+        if (!shannonOpen) setMorseOpen(false);
     };
 
     const handleMorseImport = async () => {
-        if (!morseInput.trim() || !morsePassword.trim()) {
-            setMorseError('Por favor ingrese la clave privada de Morse y contraseña');
+        if (!morseInput.trim()) {
+            setMorseError('Please enter the Morse JSON keyfile or private key');
             return;
         }
 
@@ -48,8 +45,26 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
         try {
             console.log('🟡 Importing MORSE via main.tsx...');
 
-            // Usar onWalletImport del main.tsx en lugar del servicio directo
-            await onWalletImport(morseInput.trim(), morsePassword, 'morse');
+            // Detectar si es JSON o clave privada
+            const trimmedInput = morseInput.trim();
+            let isJsonFormat = false;
+
+            try {
+                const parsed = JSON.parse(trimmedInput);
+                if (parsed.addr && parsed.name && parsed.priv) {
+                    isJsonFormat = true;
+                    console.log('✅ Detected Morse JSON keyfile format');
+                }
+            } catch {
+                console.log('📝 Detected private key format (not JSON)');
+            }
+
+            // Para JSON keyfiles, la contraseña puede ser opcional
+            // Para claves privadas, usar contraseña por defecto si no se proporciona
+            const passwordToUse = morsePassword.trim() || 'default';
+
+            // Usar onWalletImport del main.tsx
+            await onWalletImport(trimmedInput, passwordToUse, 'morse');
 
             console.log('✅ MORSE wallet imported successfully via main.tsx');
             setError('');
@@ -59,16 +74,18 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             console.error('❌ Error importing Morse wallet:', error);
 
             // Mensajes específicos para Morse en español
-            if (error.message?.includes('128 characters')) {
-                setMorseError('La clave privada de Morse debe tener 128 caracteres hexadecimales');
+            if (error.message?.includes('JSON')) {
+                setMorseError('Invalid JSON format. Ensure it has the fields addr, name and priv.');
+            } else if (error.message?.includes('128 characters')) {
+                setMorseError('Morse private key must be 128 hexadecimal characters');
             } else if (error.message?.includes('hex')) {
-                setMorseError('La clave privada de Morse debe estar en formato hexadecimal');
+                setMorseError('Morse private key must be in hexadecimal format');
             } else if (error.message?.includes('Invalid')) {
-                setMorseError('Clave privada de Morse inválida. Verifique el formato.');
+                setMorseError('Invalid format. Use the complete JSON keyfile or the 128-character private key.');
             } else if (error.message?.includes('password')) {
                 setMorseError('Error con la contraseña. Verifique que sea correcta.');
             } else {
-                setMorseError('Error al importar wallet de Morse. Verifique los datos ingresados.');
+                setMorseError('Error importing Morse wallet. Verify the format: complete JSON keyfile or hexadecimal private key.');
             }
         } finally {
             setMorseLoading(false);
@@ -78,12 +95,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     const handleShannonImport = async () => {
         setError(null);
         if (!shannonInput.trim()) {
-            setError('Por favor ingrese una frase mnemónica válida');
-            return;
-        }
-        const words = shannonInput.trim().split(/\s+/);
-        if (words.length !== 12 && words.length !== 24) {
-            setError(`La frase mnemónica debe tener exactamente 12 o 24 palabras. Tiene ${words.length} palabras.`);
+            setError('Please enter a valid value: mnemonic, private key or JSON');
             return;
         }
 
@@ -91,10 +103,10 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             setLoading(true);
             // Usar onWalletImport del main.tsx en lugar del hook directo
             await onWalletImport(shannonInput, shannonPassword, 'shannon');
-            console.log("Shannon Wallet importada exitosamente via main.tsx");
+            console.log("Shannon Wallet imported successfully via main.tsx");
         } catch (error: any) {
             console.error('Error importing Shannon wallet:', error);
-            setError(error.message || 'Error al importar la wallet de Shannon');
+            setError(error.message || 'Error importing Shannon wallet');
         } finally {
             setLoading(false);
         }
@@ -103,7 +115,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     const handleCreateWallet = async (password: string) => {
         setError(null);
         if (!password) {
-            setError('Por favor ingrese una contraseña');
+            setError('Please enter a password');
             return;
         }
 
@@ -111,70 +123,12 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             setLoading(true);
             // Usar onCreateWallet del main.tsx en lugar del hook directo
             await onCreateWallet(password, 'shannon');
-            console.log("Shannon Wallet creada exitosamente via main.tsx");
+            console.log("Shannon Wallet created successfully via main.tsx");
         } catch (error: any) {
             console.error('Error creating Shannon wallet:', error);
-            setError(error.message || 'Error al crear la wallet de Shannon');
+            setError(error.message || 'Error creating Shannon wallet');
         } finally {
             setLoading(false);
-        }
-    };
-
-    const handleSelectMorse = () => {
-        setShowMorseWarning(true);
-    };
-
-    const handleKeyFileImport = async () => {
-        setError(null);
-        if (!keyFileInput.trim() || !password.trim()) {
-            setError('Por favor ingrese el contenido del archivo de claves y la contraseña para Morse.');
-            return;
-        }
-
-        setMorseLoading(true);
-        console.log('[IndividualImport] Iniciando importación desde key file');
-
-        try {
-            await onWalletImport(keyFileInput.trim(), password, 'morse');
-            console.log('[IndividualImport] Importación desde key file exitosa');
-        } catch (err: any) {
-            console.error('[IndividualImport] Error en importación desde key file:', err);
-            if (err.message?.includes('Invalid private key')) {
-                setError('El formato del archivo de claves no es válido. Verifique que sea un archivo JSON de Morse válido.');
-            } else if (err.message?.includes('password')) {
-                setError('Contraseña incorrecta. Por favor verifique la contraseña.');
-            } else {
-                setError(err.message || 'Error al importar el archivo de claves. Verifique el formato y la contraseña.');
-            }
-        } finally {
-            setMorseLoading(false);
-        }
-    };
-
-    const handlePrivateKeyImport = async () => {
-        setError(null);
-        if (!privateKeyInput.trim() || !password.trim()) {
-            setError('Por favor ingrese la clave privada y la contraseña');
-            return;
-        }
-
-        setMorseLoading(true);
-        console.log('[IndividualImport] Iniciando importación desde clave privada');
-
-        try {
-            await onWalletImport(privateKeyInput.trim(), password, 'morse');
-            console.log('[IndividualImport] Importación desde clave privada exitosa');
-        } catch (err: any) {
-            console.error('[IndividualImport] Error en importación desde clave privada:', err);
-            if (err.message?.includes('Invalid private key')) {
-                setError('El formato de la clave privada no es válido. Debe ser un JSON de Morse o una clave hexadecimal.');
-            } else if (err.message?.includes('password')) {
-                setError('Contraseña incorrecta. Por favor verifique la contraseña.');
-            } else {
-                setError(err.message || 'Error al importar la clave privada. Verifique el formato y la contraseña.');
-            }
-        } finally {
-            setMorseLoading(false);
         }
     };
 
@@ -227,7 +181,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
     return (
         <motion.div
-            className="max-w-4xl mx-auto p-6 rounded-2xl bg-gradient-to-b from-gray-900 to-black shadow-2xl"
+            className="max-w-xl mx-auto p-6 w-screen rounded-2xl bg-gradient-to-b from-gray-900 to-black shadow-2xl"
             initial="hidden"
             animate="visible"
             variants={containerVariants}
@@ -243,7 +197,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 className="text-blue-400 mb-8 text-center text-lg"
                 layout
             >
-                Select a method to access your account
+                Select a network to import your wallet
             </motion.p>
 
             {/* Morse Red Warning Banner */}
@@ -267,21 +221,26 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 </motion.div>
             )}
 
-
             <motion.div className="space-y-6" layout>
-                {/* Key File Section */}
+                {/* Morse Section */}
                 <motion.div className="relative" layout>
                     <motion.button
-                        className={`w-full p-4 rounded-xl border-2 ${keyfileOpen ? 'border-blue-500 bg-blue-500/10' : 'border-blue-400/30 hover:border-blue-400'
+                        className={`w-full p-4 rounded-xl border-2 ${morseOpen ? 'border-yellow-500 bg-yellow-500/10' : 'border-yellow-400/30 hover:border-yellow-400'
                             } transition-colors duration-300 flex justify-between items-center group`}
-                        onClick={toggleKeyfile}
+                        onClick={toggleMorse}
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.99 }}
                         layout
                     >
-                        <span className="text-xl font-semibold text-blue-400 group-hover:text-blue-300">Key File</span>
+                        <span className="text-xl font-semibold text-yellow-400 group-hover:text-yellow-300">
+                            <i className="fas fa-bolt mr-2"></i>
+                            Morse
+                            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-900/70 text-yellow-300 border border-yellow-700/50">
+                                In migration
+                            </span>
+                        </span>
                         <motion.span
-                            animate={{ rotate: keyfileOpen ? 180 : 0 }}
+                            animate={{ rotate: morseOpen ? 180 : 0 }}
                             transition={{ duration: 0.2 }}
                         >
                             ▼
@@ -289,7 +248,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                     </motion.button>
 
                     <AnimatePresence mode="wait">
-                        {keyfileOpen && (
+                        {morseOpen && (
                             <motion.div
                                 className="overflow-hidden"
                                 variants={dropdownVariants}
@@ -299,44 +258,88 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                 layout
                             >
                                 <motion.div
-                                    className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-xl bg-gray-900/50"
+                                    className="mt-4 p-4 rounded-xl bg-gray-900/50"
                                     variants={contentVariants}
                                 >
-                                    {/* Morse Section */}
                                     <div className="space-y-4">
-                                        <h3 className="text-lg font-medium flex items-center gap-2">
-                                            <i className="fas fa-bolt text-yellow-400"></i>
-                                            <span className="text-gray-300">Morse</span>
-                                            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-900/70 text-yellow-300 border border-yellow-700/50">
-                                                En migración
-                                            </span>
-                                        </h3>
-                                        <motion.input
-                                            type="text"
-                                            placeholder="Enter Morse code or private key"
-                                            className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300"
-                                            value={morseInput}
-                                            onChange={(e) => setMorseInput(e.target.value)}
-                                            onFocus={handleSelectMorse}
-                                            disabled={morseLoading}
-                                            whileFocus={{ scale: 1.01 }}
-                                        />
+                                        <p className="text-sm text-gray-400">
+                                            Import your Morse wallet using JSON keyfile or private key:
+                                        </p>
+
+                                        {/* Input para cargar archivo */}
+                                        <div className="space-y-2">
+                                            <label className="block text-sm text-gray-300">
+                                                <i className="fas fa-file-upload mr-2"></i>
+                                                Load JSON keyfile:
+                                            </label>
+                                            <input
+                                                type="file"
+                                                accept=".json,.txt"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                        const reader = new FileReader();
+                                                        reader.onload = (event) => {
+                                                            const content = event.target?.result as string;
+                                                            setMorseInput(content);
+                                                        };
+                                                        reader.readAsText(file);
+                                                    }
+                                                }}
+                                                className="w-full px-3 py-2 text-sm rounded-lg bg-gray-800 border border-gray-600 text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                                                disabled={morseLoading}
+                                            />
+                                        </div>
+
+                                        {/* Separador */}
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex-1 h-px bg-gray-600"></div>
+                                            <span className="text-xs text-gray-400">O</span>
+                                            <div className="flex-1 h-px bg-gray-600"></div>
+                                        </div>
+
+                                        {/* Textarea para pegar JSON/clave */}
+                                        <div className="space-y-2">
+                                            <label className="block text-sm text-gray-300">
+                                                <i className="fas fa-paste mr-2"></i>
+                                                Paste JSON keyfile or private key:
+                                            </label>
+                                            <motion.textarea
+                                                placeholder='Paste your complete JSON keyfile here:
+{
+  "addr": "...",
+  "name": "...",
+  "priv": "...",
+  "pass": ""
+}
+
+O solo la clave privada hex (128 caracteres)'
+                                                className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300 resize-none min-h-[120px] text-sm font-mono"
+                                                value={morseInput}
+                                                onChange={(e) => setMorseInput(e.target.value)}
+                                                onFocus={() => setShowMorseWarning(true)}
+                                                disabled={morseLoading}
+                                                whileFocus={{ scale: 1.01 }}
+                                            />
+                                        </div>
+
                                         <motion.input
                                             type={showPassword ? "text" : "password"}
-                                            placeholder="Enter password"
+                                            placeholder="Password (only if required by the keyfile)"
                                             className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300"
                                             value={morsePassword}
                                             onChange={(e) => setMorsePassword(e.target.value)}
                                             disabled={morseLoading}
                                             whileFocus={{ scale: 1.01 }}
                                         />
+
                                         <motion.button
-                                            className="w-full px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-medium transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                            className="w-full px-6 py-3 rounded-xl bg-gradient-to-r from-yellow-600 to-yellow-700 hover:from-yellow-500 hover:to-yellow-600 text-white font-medium transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                                             onClick={handleMorseImport}
-                                            disabled={!morseInput || !morsePassword || morseLoading}
+                                            disabled={!morseInput || morseLoading}
                                             whileHover={{ scale: 1.02 }}
                                             whileTap={{ scale: 0.98 }}
-                                            onFocus={handleSelectMorse}
+                                            onFocus={() => setShowMorseWarning(true)}
                                         >
                                             {morseLoading ? (
                                                 <>
@@ -350,6 +353,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                                 </>
                                             )}
                                         </motion.button>
+
                                         {morseError && (
                                             <motion.p
                                                 className="text-red-400 text-sm mt-2"
@@ -360,51 +364,140 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                             </motion.p>
                                         )}
                                     </div>
+                                </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </motion.div>
 
-                                    {/* Shannon Section */}
+                {/* Shannon Section */}
+                <motion.div className="relative" layout>
+                    <motion.button
+                        className={`w-full p-4 rounded-xl border-2 ${shannonOpen ? 'border-purple-500 bg-purple-500/10' : 'border-purple-400/30 hover:border-purple-400'
+                            } transition-colors duration-300 flex justify-between items-center group`}
+                        onClick={toggleShannon}
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.99 }}
+                        layout
+                    >
+                        <span className="text-xl font-semibold text-purple-400 group-hover:text-purple-300">
+                            <i className="fas fa-network-wired mr-2"></i>
+                            Shannon
+                            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-900/70 text-green-300 border border-green-700/50">
+                                Recommended
+                            </span>
+                        </span>
+                        <motion.span
+                            animate={{ rotate: shannonOpen ? 180 : 0 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            ▼
+                        </motion.span>
+                    </motion.button>
+
+                    <AnimatePresence mode="wait">
+                        {shannonOpen && (
+                            <motion.div
+                                className="overflow-hidden"
+                                variants={dropdownVariants}
+                                initial="hidden"
+                                animate="visible"
+                                exit="exit"
+                                layout
+                            >
+                                <motion.div
+                                    className="mt-4 p-4 rounded-xl bg-gray-900/50"
+                                    variants={contentVariants}
+                                >
                                     <div className="space-y-4">
-                                        <h3 className="text-lg font-medium flex items-center gap-2">
-                                            <i className="fas fa-network-wired text-purple-400"></i>
-                                            <span className="text-gray-300">Shannon</span>
-                                            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-green-900/70 text-green-300 border border-green-700/50">
-                                                Recomendado
-                                            </span>
-                                        </h3>
-                                        <motion.input
-                                            type="text"
-                                            placeholder="Enter Shannon code"
-                                            className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300"
-                                            value={shannonInput}
-                                            onChange={(e) => setShannonInput(e.target.value)}
-                                            disabled={loading || morseLoading}
-                                            whileFocus={{ scale: 1.01 }}
-                                        />
+                                        <p className="text-sm text-gray-400">
+                                            Import your Shannon wallet using mnemonic, private key, or JSON:
+                                        </p>
+
+                                        {/* Input para cargar archivo */}
+                                        <div className="space-y-2">
+                                            <label className="block text-sm text-gray-300">
+                                                <i className="fas fa-file-upload mr-2"></i>
+                                                Load JSON keyfile:
+                                            </label>
+                                            <input
+                                                type="file"
+                                                accept=".json,.txt"
+                                                onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                        const reader = new FileReader();
+                                                        reader.onload = (event) => {
+                                                            const content = event.target?.result as string;
+                                                            setShannonInput(content);
+                                                        };
+                                                        reader.readAsText(file);
+                                                    }
+                                                }}
+                                                className="w-full px-3 py-2 text-sm rounded-lg bg-gray-800 border border-gray-600 text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+                                                disabled={loading}
+                                            />
+                                        </div>
+
+                                        {/* Separador */}
+                                        <div className="flex items-center gap-3">
+                                            <div className="flex-1 h-px bg-gray-600"></div>
+                                            <span className="text-xs text-gray-400">O</span>
+                                            <div className="flex-1 h-px bg-gray-600"></div>
+                                        </div>
+
+                                        {/* Textarea para pegar mnemónico/JSON/clave */}
+                                        <div className="space-y-2">
+                                            <label className="block text-sm text-gray-300">
+                                                <i className="fas fa-paste mr-2"></i>
+                                                Paste mnemonic or JSON:
+                                            </label>
+                                            <motion.textarea
+                                                placeholder='Options:
+
+1. Mnemonic (12 or 24 words):
+word1 word2 word3 ... word24
+
+2. JSON keyfile:
+{
+  "type": "...",
+  "value": "..."
+}'
+                                                className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300 resize-none min-h-[120px] text-sm font-mono"
+                                                value={shannonInput}
+                                                onChange={(e) => setShannonInput(e.target.value)}
+                                                disabled={loading}
+                                                whileFocus={{ scale: 1.01 }}
+                                            />
+                                        </div>
+
                                         <motion.input
                                             type={showPassword ? "text" : "password"}
-                                            placeholder="Enter password"
+                                            placeholder="Password (required for private key or keyfile)"
                                             className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300"
                                             value={shannonPassword}
                                             onChange={(e) => setShannonPassword(e.target.value)}
-                                            disabled={loading || morseLoading}
+                                            disabled={loading}
                                             whileFocus={{ scale: 1.01 }}
                                         />
+
                                         <motion.button
-                                            className={`w-full px-6 py-3 rounded-xl font-medium transition-all duration-200 ${loading || morseLoading
+                                            className={`w-full py-3 rounded-xl font-medium transition-all duration-200 ${loading
                                                 ? 'bg-gray-600 cursor-not-allowed'
                                                 : 'bg-gradient-to-r from-blue-600 to-blue-700 hover:shadow-blue-500/20 hover:shadow-lg active:scale-95'
                                                 }`}
                                             onClick={handleShannonImport}
-                                            disabled={loading || morseLoading}
-                                            whileHover={loading || morseLoading ? {} : { scale: 1.02 }}
-                                            whileTap={loading || morseLoading ? {} : { scale: 0.98 }}
+                                            disabled={loading}
+                                            whileHover={loading ? {} : { scale: 1.02 }}
+                                            whileTap={loading ? {} : { scale: 0.98 }}
                                         >
                                             {loading ? (
                                                 <div className="flex items-center justify-center space-x-2">
                                                     <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
-                                                    <span>Importando...</span>
+                                                    <span>Importing...</span>
                                                 </div>
                                             ) : (
-                                                'Importar Wallet Shannon'
+                                                'Import Wallet Shannon'
                                             )}
                                         </motion.button>
 
@@ -419,7 +512,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                         )}
 
                                         <motion.button
-                                            className={`w-full px-6 py-3 rounded-xl font-medium transition-all duration-200 ${loading
+                                            className={`w-full py-3 rounded-xl font-medium transition-all duration-200 ${loading
                                                 ? 'bg-gray-600 cursor-not-allowed'
                                                 : 'bg-gradient-to-r from-green-600 to-green-700 hover:shadow-green-500/20 hover:shadow-lg active:scale-95'
                                                 }`}
@@ -431,172 +524,12 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                             {loading ? (
                                                 <div className="flex items-center justify-center space-x-2">
                                                     <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white"></div>
-                                                    <span>Creando...</span>
+                                                    <span>Creating...</span>
                                                 </div>
                                             ) : (
-                                                'Crear Nueva Wallet Shannon'
+                                                'Create New Shannon Wallet'
                                             )}
                                         </motion.button>
-
-                                        {error && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: -10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className="p-3 bg-red-500/20 border border-red-500 rounded-lg text-red-400 text-sm"
-                                            >
-                                                {error}
-                                            </motion.div>
-                                        )}
-                                    </div>
-                                </motion.div>
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
-                </motion.div>
-
-                {/* Private Key Section */}
-                <motion.div className="relative" layout>
-                    <motion.button
-                        className={`w-full p-4 rounded-xl border-2 ${privateKeyOpen ? 'border-blue-500 bg-blue-500/10' : 'border-blue-400/30 hover:border-blue-400'
-                            } transition-colors duration-300 flex justify-between items-center group`}
-                        onClick={togglePrivateKey}
-                        whileHover={{ scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        layout
-                    >
-                        <span className="text-xl font-semibold text-blue-400 group-hover:text-blue-300">Private Key</span>
-                        <motion.span
-                            animate={{ rotate: privateKeyOpen ? 180 : 0 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            ▼
-                        </motion.span>
-                    </motion.button>
-
-                    <AnimatePresence mode="wait">
-                        {privateKeyOpen && (
-                            <motion.div
-                                className="overflow-hidden"
-                                variants={dropdownVariants}
-                                initial="hidden"
-                                animate="visible"
-                                exit="exit"
-                                layout
-                            >
-                                <motion.div
-                                    className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-xl bg-gray-900/50"
-                                    variants={contentVariants}
-                                >
-                                    <div className="space-y-4">
-                                        <h3 className="text-lg font-medium text-gray-300 mb-3 flex items-center gap-2">
-                                            <i className="fas fa-bolt text-yellow-400"></i>
-                                            Morse
-                                        </h3>
-                                        <div className="space-y-3">
-                                            <div className="relative">
-                                                <motion.textarea
-                                                    placeholder="Enter private key"
-                                                    className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 resize-none pr-10"
-                                                    rows={3}
-                                                    value={privateKeyInput}
-                                                    onChange={(e) => setPrivateKeyInput(e.target.value)}
-                                                    whileFocus={{ scale: 1.01 }}
-                                                />
-                                                <span className="absolute left-3 top-3 text-gray-400 pointer-events-none">
-                                                    <i className="fas fa-key"></i>
-                                                </span>
-                                            </div>
-                                            <div className="relative">
-                                                <motion.textarea
-                                                    placeholder="Enter passphrase"
-                                                    className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 resize-none pr-10"
-                                                    rows={2}
-                                                    value={password}
-                                                    onChange={(e) => setPassword(e.target.value)}
-                                                    whileFocus={{ scale: 1.01 }}
-                                                />
-                                                <span className="absolute left-3 top-3 text-gray-400 pointer-events-none">
-                                                    <i className="fas fa-lock"></i>
-                                                </span>
-                                                <motion.button
-                                                    className="absolute right-3 top-3 text-gray-400 hover:text-gray-200"
-                                                    onClick={() => setShowPassword(!showPassword)}
-                                                    whileHover={{ scale: 1.1 }}
-                                                    whileTap={{ scale: 0.9 }}
-                                                    type="button"
-                                                >
-                                                    <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
-                                                </motion.button>
-                                            </div>
-                                            <motion.button
-                                                className="w-full px-6 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-medium transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                                                onClick={handlePrivateKeyImport}
-                                                disabled={!privateKeyInput || !password || morseLoading}
-                                                whileHover={{ scale: 1.02 }}
-                                                whileTap={{ scale: 0.98 }}
-                                            >
-                                                {morseLoading ? (
-                                                    <>
-                                                        <i className="fas fa-spinner fa-spin"></i>
-                                                        Importando...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <i className="fas fa-download"></i>
-                                                        Importar Clave Privada Morse
-                                                    </>
-                                                )}
-                                            </motion.button>
-                                            {error && (
-                                                <motion.p
-                                                    className="text-red-400 text-sm mt-2"
-                                                    initial={{ opacity: 0, y: -10 }}
-                                                    animate={{ opacity: 1, y: 0 }}
-                                                >
-                                                    {error}
-                                                </motion.p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        <h3 className="text-lg font-medium text-gray-300 mb-3 flex items-center gap-2">
-                                            <i className="fas fa-network-wired text-purple-400"></i>
-                                            Shannon
-                                        </h3>
-                                        <div className="space-y-3">
-                                            <div className="relative">
-                                                <motion.textarea
-                                                    placeholder="Enter private key"
-                                                    className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 resize-none pr-10"
-                                                    rows={3}
-                                                    whileFocus={{ scale: 1.01 }}
-                                                />
-                                                <span className="absolute left-3 top-3 text-gray-400 pointer-events-none">
-                                                    <i className="fas fa-key"></i>
-                                                </span>
-                                            </div>
-                                            <div className="relative">
-                                                <motion.textarea
-                                                    placeholder="Enter passphrase"
-                                                    className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 resize-none pr-10"
-                                                    rows={2}
-                                                    whileFocus={{ scale: 1.01 }}
-                                                />
-                                                <span className="absolute left-3 top-3 text-gray-400 pointer-events-none">
-                                                    <i className="fas fa-lock"></i>
-                                                </span>
-                                                <motion.button
-                                                    className="absolute right-3 top-3 text-gray-400 hover:text-gray-200"
-                                                    onClick={() => setShowPassword(!showPassword)}
-                                                    whileHover={{ scale: 1.1 }}
-                                                    whileTap={{ scale: 0.9 }}
-                                                    type="button"
-                                                >
-                                                    <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
-                                                </motion.button>
-                                            </div>
-                                        </div>
                                     </div>
                                 </motion.div>
                             </motion.div>
@@ -606,14 +539,15 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             </motion.div>
 
             <motion.div className="mt-8 text-center">
-                <p className="text-gray-400 mb-3">¿Necesitas ayuda con la migración?</p>
+                <p className="text-gray-400 mb-3">Need help with migration?</p>
                 <motion.button
                     className="px-6 py-3 bg-gradient-to-r from-purple-600/70 to-blue-600/70 rounded-xl text-white hover:from-purple-500/70 hover:to-blue-500/70"
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
+                    onClick={() => setShowGuide(true)}
                 >
                     <i className="fas fa-exchange-alt mr-2"></i>
-                    Guía de migración Morse → Shannon
+                    Guide of migration Morse to Shannon
                 </motion.button>
             </motion.div>
 
@@ -627,6 +561,162 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 <i className="fas fa-arrow-left"></i>
                 <span>Return</span>
             </motion.button>
+
+            {/* Migration Guide Modal */}
+            <AnimatePresence>
+                {showGuide && (
+                    <motion.div
+                        className="fixed inset-0 bg-black/90 backdrop-blur-sm flex items-center justify-center z-50"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setShowGuide(false)}
+                    >
+                        <motion.div
+                            className="relative bg-gradient-to-b from-gray-900 to-black p-8 rounded-2xl border-2 border-purple-500/70 max-w-3xl max-h-[85vh] overflow-y-auto shadow-xl shadow-purple-500/20"
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-purple-600/20 to-transparent rounded-t-2xl pointer-events-none"></div>
+
+                            <h2 className="text-3xl font-bold text-center bg-gradient-to-r from-purple-400 via-blue-400 to-purple-400 bg-clip-text text-transparent mb-6">
+                                Migration Guide: Morse to Shannon
+                            </h2>
+
+                            <div className="space-y-8 text-gray-300">
+                                <motion.div
+                                    className="p-5 bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl border border-purple-500/30 shadow-lg"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.1 }}
+                                >
+                                    <h3 className="text-xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 mb-3 flex items-center">
+                                        <span className="bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white w-8 h-8 rounded-full inline-flex items-center justify-center mr-3 shadow-md">1</span>
+                                        Import your wallets
+                                    </h3>
+                                    <div className="space-y-5 pl-11">
+                                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
+                                            <h4 className="text-lg font-medium text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-amber-400 mb-2 flex items-center">
+                                                <i className="fas fa-bolt mr-2 text-yellow-400"></i>
+                                                For Morse wallet:
+                                            </h4>
+                                            <ol className="list-decimal pl-5 space-y-2 text-sm">
+                                                <li>Click on <span className="font-semibold text-yellow-300">Morse</span> dropdown above</li>
+                                                <li>Upload your JSON keyfile or paste your private key</li>
+                                                <li>Enter your password if required</li>
+                                                <li>Click <span className="font-semibold text-yellow-300">Import Morse Wallet</span></li>
+                                            </ol>
+                                        </motion.div>
+
+                                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
+                                            <h4 className="text-lg font-medium text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-purple-400 mb-2 flex items-center">
+                                                <i className="fas fa-network-wired mr-2 text-purple-400"></i>
+                                                For Shannon wallet:
+                                            </h4>
+                                            <ol className="list-decimal pl-5 space-y-2 text-sm">
+                                                <li>Click on <span className="font-semibold text-purple-300">Shannon</span> dropdown above</li>
+                                                <li>Upload your JSON keyfile or paste your mnemonic</li>
+                                                <li>Enter your password if required</li>
+                                                <li>Click <span className="font-semibold text-purple-300">Import Wallet Shannon</span></li>
+                                            </ol>
+                                        </motion.div>
+
+                                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.4 }}>
+                                            <h4 className="text-lg font-medium text-transparent bg-clip-text bg-gradient-to-r from-green-300 to-green-400 mb-2 flex items-center">
+                                                <i className="fas fa-plus-circle mr-2 text-green-400"></i>
+                                                Or create a new Shannon wallet:
+                                            </h4>
+                                            <ol className="list-decimal pl-5 space-y-2 text-sm">
+                                                <li>Click on <span className="font-semibold text-purple-300">Shannon</span> dropdown above</li>
+                                                <li>Enter a password for your new wallet</li>
+                                                <li>Click <span className="font-semibold text-green-300">Create New Shannon Wallet</span></li>
+                                            </ol>
+                                        </motion.div>
+                                    </div>
+                                </motion.div>
+
+                                <motion.div
+                                    className="p-5 bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl border border-purple-500/30 shadow-lg"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.2 }}
+                                >
+                                    <h3 className="text-xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 mb-3 flex items-center">
+                                        <span className="bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white w-8 h-8 rounded-full inline-flex items-center justify-center mr-3 shadow-md">2</span>
+                                        Start the migration process
+                                    </h3>
+                                    <div className="space-y-4 pl-11 text-sm">
+                                        <p className="text-blue-100 italic">Once you have imported both wallets (Morse and Shannon), follow these steps:</p>
+                                        <ol className="list-decimal pl-5 space-y-3 text-gray-200">
+                                            <li>Go to the dashboard and click on <span className="font-semibold text-blue-300">Migration</span> in the main menu</li>
+                                            <li>Select your <span className="font-semibold text-yellow-300">Morse wallet</span> as the source wallet</li>
+                                            <li>Select your <span className="font-semibold text-purple-300">Shannon wallet</span> as the destination wallet</li>
+                                            <li>Review the migration details and confirm</li>
+                                            <li>Sign the transaction using your Morse wallet password</li>
+                                            <li>Wait for the migration to complete - this can take several minutes</li>
+                                            <li>Verify your funds in the Shannon wallet after completion</li>
+                                        </ol>
+                                        <div className="mt-5 bg-gradient-to-r from-yellow-900/40 to-amber-900/40 p-4 rounded-lg border border-yellow-700/50">
+                                            <p className="text-yellow-200 flex items-start text-sm">
+                                                <i className="fas fa-exclamation-triangle text-yellow-300 text-lg mr-3 mt-0.5"></i>
+                                                <span>Remember that migration is a <span className="font-semibold">one-way process</span>. Once your funds are transferred to Shannon, they cannot be moved back to Morse. The Morse network is being phased out.</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                </motion.div>
+
+                                <motion.div
+                                    className="p-5 bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl border border-purple-500/30 shadow-lg"
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.3 }}
+                                >
+                                    <h3 className="text-xl font-semibold text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-fuchsia-400 mb-3 flex items-center">
+                                        <span className="bg-gradient-to-br from-violet-600 to-fuchsia-600 text-white w-8 h-8 rounded-full inline-flex items-center justify-center mr-3 shadow-md">3</span>
+                                        After migration
+                                    </h3>
+                                    <div className="space-y-4 pl-11 text-sm">
+                                        <p className="text-blue-100 italic">After a successful migration:</p>
+                                        <ul className="space-y-3 text-gray-200">
+                                            <li className="flex items-start">
+                                                <i className="fas fa-check-circle text-green-400 mr-2 mt-1"></i>
+                                                Your Shannon wallet now contains your migrated POKT tokens
+                                            </li>
+                                            <li className="flex items-start">
+                                                <i className="fas fa-check-circle text-green-400 mr-2 mt-1"></i>
+                                                You can stake, send, and manage your POKT using the Shannon network
+                                            </li>
+                                            <li className="flex items-start">
+                                                <i className="fas fa-check-circle text-green-400 mr-2 mt-1"></i>
+                                                Make sure to back up your Shannon wallet information (mnemonic and/or keyfile)
+                                            </li>
+                                            <li className="flex items-start">
+                                                <i className="fas fa-check-circle text-green-400 mr-2 mt-1"></i>
+                                                Consider using a hardware wallet for additional security
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </motion.div>
+                            </div>
+
+                            <div className="mt-8 flex justify-center relative z-10">
+                                <motion.button
+                                    className="px-8 py-3 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl text-white font-medium shadow-lg shadow-purple-500/30"
+                                    onClick={() => setShowGuide(false)}
+                                    whileHover={{ scale: 1.05, boxShadow: "0 10px 25px -5px rgba(168, 85, 247, 0.4)" }}
+                                    whileTap={{ scale: 0.95 }}
+                                >
+                                    Close Guide
+                                </motion.button>
+                            </div>
+
+                            <div className="absolute bottom-0 left-0 right-0 h-24 bg-gradient-to-t from-purple-600/10 to-transparent rounded-b-2xl pointer-events-none"></div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 };

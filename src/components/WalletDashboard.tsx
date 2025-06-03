@@ -8,6 +8,8 @@ import LoadingSpinner from './LoadingSpinner';
 import TransactionHistory from './TransactionHistory';
 import { formatBalance, shortenAddress } from '../utils/utils';
 import { storageService } from '../controller/storage.service';
+import MigrationDialog from './MigrationDialog';
+import { morseWalletService } from '../controller/MorseWallet';
 
 interface StoredWallet {
     serialized: string;
@@ -36,11 +38,15 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         shannon?: StoredWallet;
     }>({});
     const [error, setError] = useState<string | null>(null);
+    const [showMigrationDialog, setShowMigrationDialog] = useState<boolean>(false);
+    const [morsePrivateKey, setMorsePrivateKey] = useState<string | null>(null);
     const navigate = useNavigate();
 
     const fetchBalanceAndTransactions = useCallback(async () => {
         try {
-            setLoading(true);
+            if (transactionsList.length > 0) {
+                setLoading(true);
+            }
 
             // Verificar si walletManager está definido antes de usarlo
             if (!walletManager) {
@@ -201,6 +207,33 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         }
     };
 
+    // Función para abrir el diálogo de migración
+    const handleMigrationRequest = async () => {
+        try {
+            console.log('🔄 Opening migration dialog...');
+
+            // Obtener la clave privada de Morse
+            const privateKey = await morseWalletService.getMorsePrivateKey();
+
+            if (!privateKey) {
+                setError('I cannot get the private key of morse. please import a valid morse wallet.');
+                return;
+            }
+
+            setMorsePrivateKey(privateKey);
+            setShowMigrationDialog(true);
+        } catch (error) {
+            console.error('❌ Error opening migration dialog:', error);
+            setError('Error al abrir el diálogo de migración');
+        }
+    };
+
+    // Función para cerrar el diálogo de migración
+    const handleCloseMigrationDialog = () => {
+        setShowMigrationDialog(false);
+        setMorsePrivateKey(null);
+    };
+
     const containerVariants = {
         hidden: { opacity: 0 },
         visible: {
@@ -224,9 +257,9 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
     const isMorseNetwork = network === 'morse';
 
-    // Solo mostrar acciones para Morse (botón Migrate) y Shannon (botón Swap)
+    // Solo mostrar acciones para Morse (botón Migrate) y Shannon (sin Swap)
     const actions = isMorseNetwork ? [
-        { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleSwitchToShannon() },
+        { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleMigrationRequest() },
         {
             label: 'Import Wallet', icon: '📥', color: 'from-green-600/30 to-emerald-600/30', onClick: () => {
                 console.log('Navigating to import individual...');
@@ -234,7 +267,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             }
         }
     ] : [
-        { label: 'Swap', icon: '↔', color: 'from-purple-600/30 to-pink-600/30', onClick: onSwap },
+        { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleMigrationRequest() },
         {
             label: 'Import Wallet', icon: '📥', color: 'from-green-600/30 to-emerald-600/30', onClick: () => {
                 console.log('Navigating to import individual...');
@@ -249,20 +282,20 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
     return (
         <motion.div
-            className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950 text-white pb-20"
+            className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950 text-white pb-20 rounded-t-lg"
             initial="hidden"
             animate="visible"
             exit="exit"
             variants={containerVariants}
         >
             {/* Barra superior con información de red */}
-            <header className="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50 p-4 sticky top-0 z-10">
+            <header className="bg-gray-800/50 backdrop-blur-sm border-b border-gray-700/50 p-4 sticky top-0 z-10 rounded-t-lg">
                 <div className="container mx-auto flex justify-between items-center">
                     <div className="flex items-center">
                         <span className={`w-3 h-3 rounded-full mr-2 ${isOffline ? 'bg-red-500' : 'bg-green-500'}`}></span>
                         <span className="font-medium">
                             Network {network.charAt(0).toUpperCase() + network.slice(1)}
-                            {isMainnet === true ? ' Mainnet' : ' Testnet'}
+                            {network === 'shannon' ? isMainnet === true ? ' Mainnet' : ' Testnet' : ' Mainnet'}
                             {isOffline ? ' - Offline Mode' : ''}
                         </span>
                     </div>
@@ -288,108 +321,111 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                             <p><strong>Advice:</strong> {ERROR_MESSAGES.MORSE_DEPRECATED}</p>
                         </motion.div>
                     )}
-
-                    {loading ? (
-                        <div className="flex justify-center items-center h-64">
-                            <LoadingSpinner size="large" color="border-blue-500" />
-                        </div>
-                    ) : (
-                        <>
-                            <motion.section
-                                className="bg-gray-900/50 backdrop-blur-sm rounded-2xl p-8 mb-8 border border-gray-800/50"
-                                variants={itemVariants}
-                            >
-                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
-                                    <div>
-                                        <h1 className="text-3xl font-bold mb-1">{formattedBalanceValue} <span className="text-blue-400">POKT</span></h1>
-                                        <p className="text-gray-400">{walletAddress}</p>
-                                    </div>
+                    <>
+                        <motion.section
+                            className="bg-gray-900/50 backdrop-blur-sm rounded-2xl p-8 mb-8 border border-gray-800/50"
+                            variants={itemVariants}
+                        >
+                            <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
+                                <div>
+                                    <h1 className="text-3xl font-bold mb-1">{formattedBalanceValue} <span className="text-blue-400">POKT</span></h1>
+                                    <p className="text-gray-400">{walletAddress}</p>
                                 </div>
-                            </motion.section>
+                            </div>
+                        </motion.section>
 
-                            <motion.section
-                                className="mb-8"
-                                variants={itemVariants}
-                            >
-                                <h2 className="text-xl font-semibold mb-4 text-gray-300">Quick Actions</h2>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                    {actions.map((action) => {
-                                        const isImportAction = action.label === 'Import Wallet';
-                                        const shouldDisable = disableFeatures && !isImportAction;
+                        <motion.section
+                            className="mb-8"
+                            variants={itemVariants}
+                        >
+                            <h2 className="text-xl font-semibold mb-4 text-gray-300">Quick Actions</h2>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {actions.map((action) => {
+                                    const isImportAction = action.label === 'Import Wallet';
+                                    const shouldDisable = disableFeatures && !isImportAction;
 
-                                        return (
-                                            <motion.button
-                                                key={action.label}
-                                                className={`p-6 bg-gradient-to-r ${action.color} rounded-xl text-center transition-all duration-200 border border-gray-700/50 hover:border-gray-600/50 ${shouldDisable ? 'opacity-70 cursor-not-allowed' : ''}`}
-                                                whileHover={!shouldDisable ? { scale: 1.02, y: -2 } : {}}
-                                                whileTap={!shouldDisable ? { scale: 0.98 } : {}}
-                                                variants={itemVariants}
-                                                disabled={shouldDisable}
-                                                title={shouldDisable ? 'This feature is not available in offline mode' : ''}
-                                                onClick={action.onClick}
-                                            >
-                                                <span className="block text-3xl mb-3">{action.icon}</span>
-                                                <span className="text-lg font-medium">{action.label}</span>
-                                                {shouldDisable && (
-                                                    <span className="block text-xs mt-2 text-red-300">Not available</span>
-                                                )}
-                                            </motion.button>
-                                        );
-                                    })}
-                                </div>
-                            </motion.section>
-
-                            {/* Transaction History */}
-                            <motion.section
-                                className="mb-8"
-                                variants={itemVariants}
-                            >
-                                <TransactionHistory
-                                    transactions={transactionsList}
-                                    walletAddress={walletAddress}
-                                    isLoading={loading}
-                                    onRefresh={fetchBalanceAndTransactions}
-                                />
-                            </motion.section>
-
-                            {/* Advertencia de modo offline */}
-                            {showOfflineWarning && (
-                                <motion.div
-                                    className="mt-8 p-6 bg-gradient-to-r from-purple-600/30 to-blue-600/30 rounded-xl border border-purple-500/50 text-center"
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 20 }}
-                                    transition={{ type: "spring", stiffness: 100 }}
-                                >
-                                    <h3 className="text-lg font-semibold text-white mb-3">
-                                        <i className="fas fa-exclamation-triangle text-yellow-400 text-2xl mr-2"></i>
-                                        Limited connectivity
-                                    </h3>
-                                    <p className="text-gray-300 mb-4">
-                                        {isMorseNetwork ? ERROR_MESSAGES.MORSE_DEPRECATED : 'Could not connect to the network. Some features will be limited.'}
-                                    </p>
-                                    <div className="mt-3 flex flex-wrap gap-2 justify-center">
-                                        <button
-                                            onClick={handleReconnect}
-                                            className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl transition-all duration-200"
+                                    return (
+                                        <motion.button
+                                            key={action.label}
+                                            className={`p-6 bg-gradient-to-r ${action.color} rounded-xl text-center transition-all duration-200 border border-gray-700/50 hover:border-gray-600/50 ${shouldDisable ? 'opacity-70 cursor-not-allowed' : ''}`}
+                                            whileHover={!shouldDisable ? { scale: 1.02, y: -2 } : {}}
+                                            whileTap={!shouldDisable ? { scale: 0.98 } : {}}
+                                            variants={itemVariants}
+                                            disabled={shouldDisable}
+                                            title={shouldDisable ? 'This feature is not available in offline mode' : ''}
+                                            onClick={action.onClick}
                                         >
-                                            Try again
+                                            <span className="block text-3xl mb-3">{action.icon}</span>
+                                            <span className="text-lg font-medium">{action.label}</span>
+                                            {shouldDisable && (
+                                                <span className="block text-xs mt-2 text-red-300">Not available</span>
+                                            )}
+                                        </motion.button>
+                                    );
+                                })}
+                            </div>
+                        </motion.section>
+
+                        {/* Transaction History */}
+                        <motion.section
+                            className="mb-8"
+                            variants={itemVariants}
+                        >
+                            <TransactionHistory
+                                transactions={transactionsList}
+                                walletAddress={walletAddress}
+                                isLoading={loading}
+                                onRefresh={fetchBalanceAndTransactions}
+                            />
+                        </motion.section>
+
+                        {/* Advertencia de modo offline */}
+                        {showOfflineWarning && (
+                            <motion.div
+                                className="mt-8 p-6 bg-gradient-to-r from-purple-600/30 to-blue-600/30 rounded-xl border border-purple-500/50 text-center"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 20 }}
+                                transition={{ type: "spring", stiffness: 100 }}
+                            >
+                                <h3 className="text-lg font-semibold text-white mb-3">
+                                    <i className="fas fa-exclamation-triangle text-yellow-400 text-2xl mr-2"></i>
+                                    Limited connectivity
+                                </h3>
+                                <p className="text-gray-300 mb-4">
+                                    {isMorseNetwork ? ERROR_MESSAGES.MORSE_DEPRECATED : 'Could not connect to the network. Some features will be limited.'}
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2 justify-center">
+                                    <button
+                                        onClick={handleReconnect}
+                                        className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-xl transition-all duration-200"
+                                    >
+                                        Try again
+                                    </button>
+                                    {isMorseNetwork && (
+                                        <button
+                                            onClick={handleSwitchToShannon}
+                                            className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all duration-200"
+                                        >
+                                            Switch to Shannon
                                         </button>
-                                        {isMorseNetwork && (
-                                            <button
-                                                onClick={handleSwitchToShannon}
-                                                className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-xl transition-all duration-200"
-                                            >
-                                                Switch to Shannon
-                                            </button>
-                                        )}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </>
-                    )}
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+                    </>
                 </AnimatePresence>
             </main>
+
+            {/* Migration Dialog */}
+            {showMigrationDialog && morsePrivateKey && (
+                <MigrationDialog
+                    isOpen={showMigrationDialog}
+                    onClose={handleCloseMigrationDialog}
+                    morsePrivateKey={morsePrivateKey}
+                    morseAddress={walletAddress}
+                />
+            )}
         </motion.div>
     );
 };

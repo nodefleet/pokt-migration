@@ -115,26 +115,32 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
     if (hasMorse) availableNetworks.push('morse');
 
     return (
-        <div className="relative">
+        <div className="relative z-50">
             <motion.button
-                className="flex items-center space-x-2 bg-gray-800 hover:bg-gray-700 px-4 py-2 rounded-lg border border-gray-600"
+                className="flex items-center space-x-2 bg-gradient-to-r from-gray-800/90 to-gray-900/90 backdrop-blur-sm hover:from-gray-700/90 hover:to-gray-800/90 px-4 py-2.5 rounded-xl border border-indigo-500/30 shadow-md shadow-indigo-500/10 transition-all duration-300"
                 onClick={() => setIsOpen(!isOpen)}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
             >
                 <div className="flex items-center space-x-2">
-                    <div className={`w-3 h-3 rounded-full ${currentNetwork === 'shannon' ? 'bg-blue-500' : 'bg-purple-500'}`} />
-                    <span className="text-sm font-medium">
+                    <div className={`w-3 h-3 rounded-full ${currentNetwork === 'shannon'
+                        ? 'bg-gradient-to-r from-blue-400 to-blue-500 shadow-sm shadow-blue-400/50'
+                        : 'bg-gradient-to-r from-yellow-400 to-amber-500 shadow-sm shadow-yellow-400/50'
+                        }`} />
+                    <span className={`text-sm font-medium ${currentNetwork === 'shannon'
+                        ? 'bg-gradient-to-r from-blue-300 to-blue-100 bg-clip-text text-transparent'
+                        : 'bg-gradient-to-r from-yellow-300 to-amber-200 bg-clip-text text-transparent'
+                        }`}>
                         {currentNetwork.toUpperCase()}
                     </span>
                     {currentAddress && (
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-gray-300 font-mono">
                             {truncateAddress(currentAddress)}
                         </span>
                     )}
                 </div>
                 <svg
-                    className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                    className={`w-4 h-4 transition-transform text-gray-300 ${isOpen ? 'rotate-180' : ''}`}
                     fill="none"
                     stroke="currentColor"
                     viewBox="0 0 24 24"
@@ -145,94 +151,121 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
 
             {isOpen && (
                 <motion.div
-                    className="absolute top-full left-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50"
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
+                    className="fixed w-80 top-auto right-auto mt-2 bg-gradient-to-b from-gray-800/95 to-gray-900/95 backdrop-blur-md border border-indigo-500/30 rounded-xl shadow-xl overflow-hidden"
+                    initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                    transition={{ duration: 0.2 }}
+                    style={{
+                        position: 'absolute',
+                        top: '100%',
+                        right: 0,
+                        zIndex: 100
+                    }}
                 >
-                    <div className="p-4">
-                        <h3 className="text-lg font-semibold mb-3">Select Wallet</h3>
+                    <div className="p-5">
+                        <h3 className="text-lg font-semibold mb-4 bg-gradient-to-r from-blue-300 to-purple-300 bg-clip-text text-transparent">Select Wallet</h3>
 
                         {/* Network Selector - Solo mostrar si hay más de una red disponible */}
                         {availableNetworks.length > 1 && (
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium mb-2">Network:</label>
+                            <div className="mb-5">
+                                <label className="block text-sm font-medium mb-2 text-gray-300">Network:</label>
                                 <div className="flex space-x-2">
                                     {hasShannon && (
                                         <button
-                                            className={`flex-1 px-3 py-2 rounded-md text-sm ${currentNetwork === 'shannon'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                            className={`flex-1 px-3 py-2 rounded-lg text-sm transition-all duration-300 ${currentNetwork === 'shannon'
+                                                ? 'bg-gradient-to-r from-blue-600/70 to-blue-700/70 text-white shadow-md shadow-blue-600/20'
+                                                : 'bg-gray-700/70 text-gray-300 hover:bg-gray-600/70'
                                                 }`}
                                             onClick={() => onNetworkChange('shannon')}
                                         >
-                                            Shannon
+                                            <div className="flex items-center justify-center space-x-1.5">
+                                                <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+                                                <span>Shannon</span>
+                                            </div>
                                         </button>
                                     )}
                                     {hasMorse && (
                                         <button
-                                            className={`flex-1 px-3 py-2 rounded-md text-sm ${currentNetwork === 'morse'
-                                                ? 'bg-purple-600 text-white'
-                                                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                                            className={`flex-1 px-3 py-2 rounded-lg text-sm transition-all duration-300 ${currentNetwork === 'morse'
+                                                ? 'bg-gradient-to-r from-yellow-600/70 to-amber-700/70 text-white shadow-md shadow-yellow-600/20'
+                                                : 'bg-gray-700/70 text-gray-300 hover:bg-gray-600/70'
                                                 }`}
                                             onClick={() => onNetworkChange('morse')}
                                         >
-                                            Morse
+                                            <div className="flex items-center justify-center space-x-1.5">
+                                                <div className="w-2 h-2 rounded-full bg-yellow-400"></div>
+                                                <span>Morse</span>
+                                            </div>
                                         </button>
                                     )}
                                 </div>
                             </div>
                         )}
 
-                        {/* 🔥 SELECT PARA MAINNET/TESTNET - JUSTO ACÁ MAMAGUEVO! */}
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium mb-2 text-yellow-400">⚡ Select Environment:</label>
-                            <select
-                                value={selectedMainnet === true ? 'mainnet' : 'testnet'}
-                                onChange={(e) => {
-                                    const newIsMainnet = e.target.value === 'mainnet';
-                                    setSelectedMainnet(newIsMainnet);
+                        {/* 🔥 SELECT PARA MAINNET/TESTNET - OCULTAR EN MORSE */}
+                        {currentNetwork === 'shannon' && (
+                            <div className="mb-5">
+                                <label className="block text-sm font-medium mb-2 text-yellow-300">
+                                    <i className="fas fa-exclamation-triangle mr-1.5"></i>
+                                    Select Environment:
+                                </label>
+                                <div className="relative">
+                                    <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none">
+                                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
+                                    <select
+                                        value={selectedMainnet === true ? 'mainnet' : 'testnet'}
+                                        onChange={(e) => {
+                                            const newIsMainnet = e.target.value === 'mainnet';
+                                            setSelectedMainnet(newIsMainnet);
 
-                                    // GUARDAR INMEDIATAMENTE EN STORAGE cuando el usuario cambie
-                                    storageService.set('isMainnet', newIsMainnet).then(() => {
-                                        console.log('🎯 WalletSelector: Mainnet preference saved to storage:', newIsMainnet === true ? 'mainnet' : 'testnet');
-                                    });
+                                            // GUARDAR INMEDIATAMENTE EN STORAGE cuando el usuario cambie
+                                            storageService.set('isMainnet', newIsMainnet).then(() => {
+                                                console.log('🎯 WalletSelector: Mainnet preference saved to storage:', newIsMainnet === true ? 'mainnet' : 'testnet');
+                                            });
 
-                                    // Notificar el cambio al componente padre si existe el callback
-                                    if (onMainnetChange) {
-                                        onMainnetChange(newIsMainnet);
-                                    }
-                                }}
-                                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-md text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            >
-                                <option value="testnet" className="bg-gray-700">🧪 TESTNET (Recommended)</option>
-                                <option value="mainnet" className="bg-gray-700">🚀 MAINNET (Real Money)</option>
-                            </select>
-                            <p className="text-xs text-gray-400 mt-1">
-                                {selectedMainnet === true ? '⚠️ Mainnet uses real POKT tokens' : '✅ Testnet is safe for testing'}
-                            </p>
-                        </div>
+                                            // Notificar el cambio al componente padre si existe el callback
+                                            if (onMainnetChange) {
+                                                onMainnetChange(newIsMainnet);
+                                            }
+                                        }}
+                                        className="block w-full pl-4 pr-10 py-2.5 bg-gray-700/80 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none shadow-inner transition-all duration-300"
+                                    >
+                                        <option value="testnet" className="bg-gray-700">🧪 TESTNET (Recommended)</option>
+                                        <option value="mainnet" className="bg-gray-700">🚀 MAINNET (Real Money)</option>
+                                    </select>
+                                </div>
+                                <p className={`text-xs mt-2 ${selectedMainnet === true ? 'text-red-300' : 'text-green-300'}`}>
+                                    {selectedMainnet === true
+                                        ? '⚠️ Mainnet uses real POKT tokens'
+                                        : '✅ Testnet is safe for testing'}
+                                </p>
+                            </div>
+                        )}
 
                         {/* Available Wallets */}
-                        <div className="space-y-2">
-                            <label className="block text-sm font-medium">Available Wallets:</label>
+                        <div className="space-y-3">
+                            <label className="block text-sm font-medium text-gray-300">Available Wallets:</label>
 
                             {/* Shannon Wallets */}
                             {hasShannon && (
-                                <div>
-                                    <p className="text-xs text-blue-400 mb-1">Shannon:</p>
+                                <div className="space-y-1.5">
+                                    <p className="text-xs font-medium text-blue-400 ml-1">Shannon:</p>
                                     {availableWallets.shannon.map((wallet, index) => (
                                         <button
                                             key={`shannon-${index}`}
-                                            className={`w-full text-left px-3 py-2 rounded-md text-sm mb-1 ${wallet.parsed?.address === currentAddress && currentNetwork === 'shannon'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ${wallet.parsed?.address === currentAddress && currentNetwork === 'shannon'
+                                                ? 'bg-gradient-to-r from-blue-600/60 to-blue-700/60 text-white shadow-sm'
+                                                : 'bg-gray-800/60 hover:bg-gray-700/60 text-gray-300'
                                                 }`}
                                             onClick={() => handleWalletSelect(wallet)}
                                         >
                                             <div className="flex items-center justify-between">
-                                                <span>{wallet.parsed?.address ? truncateAddress(wallet.parsed.address) : 'Invalid Address'}</span>
-                                                <span className="text-xs text-blue-400">Shannon</span>
+                                                <span className="font-mono">{wallet.parsed?.address ? truncateAddress(wallet.parsed.address) : 'Invalid Address'}</span>
+                                                <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300 border border-blue-800/50">Shannon</span>
                                             </div>
                                         </button>
                                     ))}
@@ -241,42 +274,39 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
 
                             {/* Morse Wallets */}
                             {hasMorse && (
-                                <div>
-                                    <p className="text-xs text-purple-400 mb-1">Morse:</p>
+                                <div className="space-y-1.5">
+                                    <p className="text-xs font-medium text-yellow-400 ml-1">Morse:</p>
                                     {availableWallets.morse.map((wallet, index) => (
                                         <button
                                             key={`morse-${index}`}
-                                            className={`w-full text-left px-3 py-2 rounded-md text-sm mb-1 ${wallet.parsed?.address === currentAddress && currentNetwork === 'morse'
-                                                ? 'bg-purple-600 text-white'
-                                                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                                            className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-300 ${wallet.parsed?.address === currentAddress && currentNetwork === 'morse'
+                                                ? 'bg-gradient-to-r from-yellow-600/60 to-amber-700/60 text-white shadow-sm'
+                                                : 'bg-gray-800/60 hover:bg-gray-700/60 text-gray-300'
                                                 }`}
                                             onClick={() => handleWalletSelect(wallet)}
                                         >
                                             <div className="flex items-center justify-between">
-                                                <span>{wallet.parsed?.address ? truncateAddress(wallet.parsed.address) : 'Invalid Address'}</span>
-                                                <span className="text-xs text-purple-400">Morse</span>
+                                                <span className="font-mono">{wallet.parsed?.address ? truncateAddress(wallet.parsed.address) : 'Invalid Address'}</span>
+                                                <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-300 border border-yellow-800/50">Morse</span>
                                             </div>
                                         </button>
                                     ))}
                                 </div>
                             )}
 
-                            {!hasShannon && !hasMorse && (
-                                <p className="text-gray-400 text-sm py-2">No saved wallets</p>
-                            )}
-                        </div>
-
-                        {/* Import New Wallet Button */}
-                        <div className="mt-4 pt-3 border-t border-gray-600">
-                            <button
-                                className="w-full px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium"
-                                onClick={() => {
-                                    onImportNew();
-                                    setIsOpen(false);
-                                }}
-                            >
-                                + Import New Wallet
-                            </button>
+                            {/* Import New Wallet Button */}
+                            <div className="pt-3 mt-3 border-t border-gray-700/70">
+                                <button
+                                    className="w-full px-3 py-2.5 rounded-lg text-sm bg-gradient-to-r from-indigo-600/60 to-purple-600/60 hover:from-indigo-500/60 hover:to-purple-500/60 text-white transition-all duration-300 flex items-center justify-center space-x-2"
+                                    onClick={() => {
+                                        setIsOpen(false);
+                                        onImportNew();
+                                    }}
+                                >
+                                    <i className="fas fa-plus-circle"></i>
+                                    <span>Import New Wallet</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </motion.div>

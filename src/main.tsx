@@ -413,7 +413,12 @@ const App: React.FC = () => {
                         }
 
                         // Limpiar datos anteriores inmediatamente
-                        setBalance('0');
+                        setTransactions([]);
+
+                        // No resetear inmediatamente a 0, mantener balance anterior mientras carga
+                        setTransactions([]);
+
+                        // Solo limpiar transacciones, mantener balance anterior mientras carga
                         setTransactions([]);
 
                         // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS
@@ -475,7 +480,9 @@ const App: React.FC = () => {
                         }
 
                         // Limpiar datos
-                        setBalance('0');
+                        setTransactions([]);
+
+                        // No resetear inmediatamente a 0, mantener balance anterior mientras carga
                         setTransactions([]);
 
                         // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS
@@ -504,7 +511,6 @@ const App: React.FC = () => {
                         }
 
                         // Limpiar balance y transacciones para forzar recarga
-                        setBalance('0');
                         setTransactions([]);
 
                         // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS si hay wallet activa
@@ -518,7 +524,7 @@ const App: React.FC = () => {
                     }
                 }}
             />
-            <main className="flex-grow container mx-auto px-4 py-8">
+            <main className="flex-grow max-w-6xl mx-auto px-4 py-8">
                 <Routes>
                     <Route path="/" element={<MainContent onWalletImport={handleWalletImport} />} />
 
@@ -573,7 +579,9 @@ const App: React.FC = () => {
                                             }
 
                                             // Limpiar datos
-                                            setBalance('0');
+                                            setTransactions([]);
+
+                                            // No resetear inmediatamente a 0, mantener balance anterior mientras carga
                                             setTransactions([]);
 
                                             // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS

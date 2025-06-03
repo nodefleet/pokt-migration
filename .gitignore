@@ -7,3 +7,7 @@ web-wallet-v2/
 wallet/
 morsedoc/
 shannondoc/
+.env
+.env.example
+migration-backend/
+localnet/

@@ -628,19 +628,12 @@ export class WalletService {
             // NO SOBRESCRIBIR la selección manual del usuario
             // storageService.set(STORAGE_KEYS.NETWORK, isMainnet === true ? 'mainnet' : 'testnet');
 
-            // Para Morse, configurar modo offline inmediatamente sin intentar conectar
-            if (network === 'morse') {
-                console.log('🟡 MORSE network detected - configuring offline mode immediately');
-                this.walletManager.setOfflineMode(true);
-                return; // Salir inmediatamente sin intentar conectar
-            }
-
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !isMainnetBool; // Negar directamente - más simple y confiable
             console.log(`🔍 DEBUG switchNetwork: isMainnet=${isMainnetBool}, isTestnet=${isTestnet} (types: ${typeof isMainnetBool}, ${typeof isTestnet})`);
             console.log(`🔍 DEBUG switchNetwork: About to call walletManager.switchNetwork(${network}, ${isTestnet})`);
 
-            // Solo para Shannon intentar conectar
+            // Permitir que todas las redes (incluido Morse) usen sus funciones específicas
             await this.walletManager.switchNetwork(network, isTestnet);
         } catch (error) {
             console.error('Error switching network:', error);
