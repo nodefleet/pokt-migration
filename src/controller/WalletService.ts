@@ -271,6 +271,28 @@ export class WalletService {
             else {
                 console.log('📄 DETECTED MNEMONIC/JSON - Using standard Shannon import');
 
+                // Si es wallet serializada con formato JSON pero contiene "coinbase", es muy probablemente una wallet Morse
+                if (code.trim().startsWith('{') && code.includes('coinbase')) {
+                    console.log('🟡 DETECTED MORSE JSON WALLET - Using MorseWalletService');
+
+                    try {
+                        // Usar la clase específica de Morse
+                        const morseResult = await morseWalletService.importMorsePrivateKey(code, password);
+
+                        console.log('✅ MORSE JSON wallet imported:', morseResult.address);
+
+                        return {
+                            address: morseResult.address,
+                            balance: '0', // Las wallets de Morse no tienen balance verificable directamente
+                            network: 'morse', // Es una wallet Morse
+                            isMainnet: isMainnet !== undefined ? isMainnet : false // Respetar la configuración del usuario
+                        };
+                    } catch (morseError) {
+                        console.error('❌ Failed to import as Morse JSON wallet, trying Shannon:', morseError);
+                        // Si falla la importación como Morse, intentar como Shannon
+                    }
+                }
+
                 // Mnemónicos y wallets serializadas van por Shannon
                 return await this.importShannonWallet(code, password, network, isMainnet);
             }

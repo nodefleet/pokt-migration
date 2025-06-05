@@ -144,16 +144,28 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             console.log('📤 Morse wallet:', morseWallet.address);
             console.log('📥 Shannon wallet:', shannonWallet.address);
 
-            // Prepare migration data for backend
+            // Preparar los datos en el formato que espera el backend
+            // La clave privada Morse puede estar en formato JSON o hex
+            let morseKeyData = morseWallet.privateKey;
+
+            // Si tenemos información completa de la wallet, enviarla como JSON
+            const morseWallets = storageService.getSync<any>('morse_wallet');
+            const moredata = JSON.parse(morseWallets.serialized);
+            if (morseWallet.address && morseWallet.privateKey) {
+                // Enviar la wallet Morse completa en formato JSON
+                morseKeyData = JSON.stringify({
+                    addr: moredata.address,
+                    name: moredata.name || `wallet-${morseWallet.address.substring(0, 8)}`,
+                    priv: moredata.priv,
+                    pass: moredata.pass || "",
+                    account: moredata.account || 0
+                });
+            }
+
+            // Construir el payload con los nombres de campos correctos que espera el backend
             const migrationData = {
-                morsePrivateKeys: [morseWallet.privateKey],
-                signingAccount: shannonWallet.address,
-                options: {
-                    unsafe: false,
-                    unarmoredJson: false,
-                    home: './localnet/pocketd',
-                    keyringBackend: 'test'
-                }
+                morsePrivateKey: morseKeyData, // Usar campo en singular
+                shannonAddress: shannonWallet.address // Usar shannonAddress en lugar de signingAccount
             };
 
             console.log('📡 Sending migration request to backend...');

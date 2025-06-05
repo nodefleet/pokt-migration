@@ -424,7 +424,32 @@ export class MorseWalletService {
             console.log('  - Is JSON format:', isJson);
             console.log('  - Is Hex format:', isHex);
 
-            return isJson || isHex;
+            // Comprobación adicional para JSONs con formato Morse
+            let isSpecialMorseJson = false;
+
+            if (!isJson && !isHex && code.trim().startsWith('{')) {
+                try {
+                    // Intentar analizar el JSON
+                    const jsonData = JSON.parse(code.trim());
+
+                    // Verificar si tiene características típicas de wallets Morse
+                    isSpecialMorseJson = (
+                        (jsonData.coinbase !== undefined) ||
+                        (jsonData.privkey !== undefined) ||
+                        (jsonData.private_key !== undefined) ||
+                        (jsonData.type === 'morse') ||
+                        (jsonData.addr && jsonData.priv) ||
+                        (typeof jsonData.address === 'string' && jsonData.address.startsWith('pokt1'))
+                    );
+
+                    console.log('  - Is Special Morse JSON:', isSpecialMorseJson);
+                } catch (jsonError) {
+                    // Error al analizar JSON, no es un JSON válido
+                    console.log('  - JSON parse error:', jsonError);
+                }
+            }
+
+            return isJson || isHex || isSpecialMorseJson;
         } catch (error: any) {
             console.error('❌ Error detecting Morse wallet:', error.message);
             return false;
