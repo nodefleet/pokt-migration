@@ -33,7 +33,7 @@ export class WalletManager {
 
     constructor(networkType: NetworkType = 'shannon', isTestnet: boolean = true) {
         this.networkType = networkType;
-        this.networkMode = isTestnet ? 'TESTNET' : 'MAINNET';
+        this.networkMode = 'MAINNET'; // FORZAR MAINNET SIEMPRE
 
         // Mostrar warning para Morse
         if (networkType === 'morse') {
@@ -124,24 +124,24 @@ export class WalletManager {
     async switchNetwork(networkType: NetworkType = this.networkType, isTestnet: boolean = true): Promise<void> {
         if (networkType === 'morse') {
             console.warn(ERROR_MESSAGES.MORSE_DEPRECATED);
-            // MORSE: SIEMPRE USAR MAINNET (poktradar.io solo funciona en mainnet)
+            // MORSE: SIEMPRE USAR MAINNET
             this.networkType = networkType;
             this.networkMode = 'MAINNET'; // FORZAR MAINNET para Morse
-            this.isForcedOffline = false; // Morse está "conectado" via poktradar.io
-            console.log(`🟡 MORSE network configured for MAINNET mode (poktradar.io endpoint)`);
+            this.isForcedOffline = false; // Morse está "conectado" via API
+            console.log(`🟡 MORSE network configured for MAINNET mode`);
             return; // No intentar conexión RPC para Morse
         }
 
         // CORREGIR: Establecer networkMode ANTES de crear ShannonWallet
         this.networkType = networkType;
-        this.networkMode = isTestnet ? 'TESTNET' : 'MAINNET';
+        this.networkMode = 'MAINNET'; // FORZAR MAINNET SIEMPRE
         this.lastSuccessfulRpcUrl = null; // Resetear la URL exitosa al cambiar de red
         this.isForcedOffline = false; // Reintentar la conexión al cambiar de red
 
         // Reinicializar ShannonWallet con la nueva configuración
         if (networkType === 'shannon') {
             this.shannonWallet = new ShannonWallet(this.networkMode);
-            console.log(`🔧 ShannonWallet reinitializado para ${this.networkMode} (isTestnet: ${isTestnet})`);
+            console.log(`🔧 ShannonWallet reinitializado para ${this.networkMode}`);
         }
 
         try {
@@ -262,6 +262,9 @@ export class WalletManager {
      */
     async importWallet(serialization: string, password: string): Promise<string> {
         try {
+            // FORZAR PREFIJO MAINNET
+            console.log('🔵 WalletManager.importWallet - FORZANDO prefijo MAINNET "pokt"');
+
             // Intentar conectar primero
             if (!this.isOfflineMode()) {
                 await this.initializeClient();
@@ -269,6 +272,8 @@ export class WalletManager {
 
             // Para Shannon, usamos la clase ShannonWallet
             if (this.networkType === 'shannon' && this.shannonWallet) {
+                // Hack para forzar mainnet - el método original usa la red configurada
+                this.networkMode = 'MAINNET'; // FORZAR MAINNET
                 return await this.shannonWallet.importWallet(serialization);
             }
 
@@ -279,8 +284,16 @@ export class WalletManager {
                 throw new Error('Wallet format is not valid. Make sure it is valid JSON.');
             }
 
+            // FORZAR PREFIJO MAINNET para DirectSecp256k1HdWallet
             this.wallet = await DirectSecp256k1HdWallet.deserialize(serialization, password);
+
+            // Verificar si el prefijo es correcto (debe ser pokt para mainnet)
             const [firstAccount] = await this.wallet.getAccounts();
+            if (!firstAccount.address.startsWith('pokt')) {
+                console.log(`⚠️ Wallet importada con prefijo incorrecto: ${firstAccount.address.substring(0, 7)}... - DEBERÍA ser 'pokt'`);
+                // No se puede cambiar el prefijo de una wallet ya deserializada, 
+                // tendríamos que recrearla con el prefijo correcto
+            }
 
             return firstAccount.address;
         } catch (error) {
@@ -417,39 +430,39 @@ export class WalletManager {
      * Obtiene el balance de una dirección Morse usando el endpoint REST API
      */
     private async getMorseBalance(address: string): Promise<string> {
-        console.log(`🟡 Getting MORSE balance for ${address} using poktradar.io API`);
+        console.log(`🟡 Getting MORSE balance for ${address} using new Tango API`);
 
-        // Usar el proxy local configurado en vite.config.ts que apunta a poktradar.io
-        const API_BASE_URL = '/api/poktradar';
+        // Usar el proxy local configurado en vite.config.ts que apunta a Tango
+        const API_URL = '/api/tango/v1/query/balance';
 
         try {
-            const response = await fetch(`${API_BASE_URL}/address/balance?address=${address}`, {
-                method: 'GET',
+            const response = await fetch(API_URL, {
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
+                body: JSON.stringify({ address: address })
             });
 
             if (!response.ok) {
-                console.error(`❌ Poktradar balance API error (${response.status})`);
+                console.error(`❌ Tango balance API error (${response.status})`);
                 return '0';
             }
 
             const data = await response.json();
-            console.log('✅ Poktradar balance response:', data);
+            console.log('✅ Tango balance response:', data);
 
-            // Poktradar SÍ devuelve balance directo en uPOKT
+            // El API de Tango devuelve el balance en el campo balance
             if (data.balance !== undefined && data.balance !== null) {
-                // Convertir de uPOKT a POKT (dividir por 1,000,000)
                 const balanceInPokt = data.balance;
-                console.log(`💰 Balance converted: ${data.balance} uPOKT = ${balanceInPokt} POKT`);
-                return balanceInPokt;
+                console.log(`💰 Morse balance: ${balanceInPokt} POKT`);
+                return balanceInPokt.toString();
             } else {
-                console.warn('⚠️ No balance field in poktradar response');
+                console.warn('⚠️ No balance field in Tango response');
                 return '0';
             }
         } catch (error) {
-            console.error('❌ Error getting Morse balance from poktradar:', error);
+            console.error('❌ Error getting Morse balance from Tango API:', error);
             return '0';
         }
     }

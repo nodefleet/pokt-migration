@@ -21,6 +21,16 @@ export default defineConfig({
                     'Accept': 'application/json',
                     'Content-Type': 'application/json',
                 }
+            },
+            '/api/tango': {
+                target: 'https://pocket.tango.admin.poktscan.cloud',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/api\/tango/, ''),
+                secure: true,
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                }
             }
         }
     },

@@ -3,7 +3,7 @@ export const NETWORKS = {
         MAINNET: {
             name: 'Shannon Mainnet',
             rpcUrls: [
-                'https://rpc.pokt.sh',
+                'https://shannon-grove-rpc.mainnet.poktroll.com/',
             ],
             chainId: 'shannon-mainnet',
             symbol: 'POKT',
@@ -11,15 +11,14 @@ export const NETWORKS = {
             prefix: 'pokt'
         },
         TESTNET: {
-            name: 'Shannon Testnet',
+            name: 'Shannon Mainnet',
             rpcUrls: [
-                // 'https://rpc.shannon.nodefleet.org',
-                'https://shannon-testnet-grove-rpc.beta.poktroll.com',
+                'https://shannon-grove-rpc.mainnet.poktroll.com/',
             ],
-            chainId: 'shannon-testnet',
+            chainId: 'shannon-mainnet',
             symbol: 'POKT',
             decimals: 6,
-            prefix: 'poktval'
+            prefix: 'pokt'
         }
     },
     MORSE: {
@@ -34,12 +33,12 @@ export const NETWORKS = {
             decimals: 6
         },
         TESTNET: {
-            name: 'Morse Testnet',
+            name: 'Morse Mainnet',
             prefix: "pokt",
             rpcUrls: [
                 "https://pokt-archival.rpc.grove.city/v1/440ae1fc"
             ],
-            chainId: 'testnet',
+            chainId: 'mainnet',
             symbol: 'POKT',
             decimals: 6
         }
@@ -48,9 +47,9 @@ export const NETWORKS = {
 
 // Para compatibilidad con código existente
 export const MAINNET = NETWORKS.SHANNON.MAINNET;
-export const TESTNET = NETWORKS.SHANNON.TESTNET;
+export const TESTNET = NETWORKS.SHANNON.MAINNET;
 
-export const DEFAULT_NETWORK = NETWORKS.SHANNON.TESTNET;
+export const DEFAULT_NETWORK = NETWORKS.SHANNON.MAINNET;
 
 export const STORAGE_KEYS = {
     WALLET_ADDRESS: 'pokt_wallet_address',

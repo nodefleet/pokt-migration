@@ -28,7 +28,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         morse: StoredWallet[]
     }>({ shannon: [], morse: [] });
     const [isOpen, setIsOpen] = useState(false);
-    const [selectedMainnet, setSelectedMainnet] = useState<boolean>(isMainnet === true || false);
+    const [selectedMainnet, setSelectedMainnet] = useState<boolean>(true);
 
     // SOLO CARGAR DESDE STORAGE AL INICIO, UNA VEZ
     useEffect(() => {
@@ -36,19 +36,14 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
             // Cargar wallets
             await loadAvailableWallets();
 
-            // Cargar isMainnet SOLO si no viene del padre
-            if (isMainnet === undefined) {
-                const savedIsMainnet = await storageService.get<boolean>('isMainnet');
-                if (savedIsMainnet !== null && savedIsMainnet !== undefined) {
-                    console.log('🎯 WalletSelector: INITIAL load from storage:', savedIsMainnet === true ? 'mainnet' : 'testnet');
-                    setSelectedMainnet(savedIsMainnet === true);
-                } else {
-                    console.log('🎯 WalletSelector: NO storage value, using false as default');
-                    setSelectedMainnet(false);
-                }
-            } else {
-                console.log('🎯 WalletSelector: INITIAL using parent value:', isMainnet === true ? 'mainnet' : 'testnet');
-                setSelectedMainnet(isMainnet === true);
+            // FORZAR MAINNET SIEMPRE
+            console.log('🎯 WalletSelector: FORZANDO MAINNET por defecto');
+            setSelectedMainnet(true);
+            await storageService.set('isMainnet', true);
+
+            // Notificar al padre si existe el callback
+            if (onMainnetChange) {
+                onMainnetChange(true);
             }
         };
 
@@ -67,13 +62,15 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         };
     }, []); // SIN DEPENDENCIAS para que solo se ejecute una vez
 
-    // SINCRONIZAR CON EL PADRE SOLO CUANDO CAMBIE
+    // FORZAR MAINNET SIEMPRE
     useEffect(() => {
-        if (isMainnet !== undefined) {
-            console.log('🎯 WalletSelector: Parent isMainnet changed, syncing:', isMainnet === true ? 'mainnet' : 'testnet');
-            setSelectedMainnet(isMainnet === true);
+        setSelectedMainnet(true);
+
+        // Solo notificar si NO es ya mainnet
+        if (isMainnet !== true && onMainnetChange) {
+            onMainnetChange(true);
         }
-    }, [isMainnet]);
+    }, [isMainnet, onMainnetChange]);
 
     const loadAvailableWallets = async () => {
         try {
@@ -234,14 +231,14 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                         }}
                                         className="block w-full pl-4 pr-10 py-2.5 bg-gray-700/80 border border-gray-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none shadow-inner transition-all duration-300"
                                     >
-                                        <option value="testnet" className="bg-gray-700">🧪 TESTNET (Recommended)</option>
-                                        <option value="mainnet" className="bg-gray-700">🚀 MAINNET (Real Money)</option>
+                                        <option value="mainnet" className="bg-gray-700">🚀 MAINNET</option>
+                                        <option value="testnet" className="bg-gray-700">🧪 TESTNET</option>
                                     </select>
                                 </div>
-                                <p className={`text-xs mt-2 ${selectedMainnet === true ? 'text-red-300' : 'text-green-300'}`}>
+                                <p className={`text-xs mt-2 ${selectedMainnet === true ? 'text-green-300' : 'text-yellow-300'}`}>
                                     {selectedMainnet === true
-                                        ? '⚠️ Mainnet uses real POKT tokens'
-                                        : '✅ Testnet is safe for testing'}
+                                        ? '✅ Using Mainnet for real transactions'
+                                        : '⚠️ Testnet is for testing only'}
                                 </p>
                             </div>
                         )}

@@ -350,36 +350,61 @@ export class MorseWalletService {
      */
     private async createMorseWalletFromHex(inputHex: string, password: string): Promise<{ address: string, serialized: string }> {
         try {
-            console.log(`🔧 Creando wallet Morse desde hex: ${inputHex.substring(0, 8)}...`);
+            console.log(`🔧 Creando wallet Morse desde input: ${inputHex.substring(0, 8)}...`);
 
             // Limpiar el hex (remover prefijo 0x si existe)
-            const cleanHex = inputHex.replace(/^0x/, '');
+            let cleanHex = inputHex.replace(/^0x/, '').trim();
 
-            // Validar que sea un hex válido
-            if (!/^[0-9a-fA-F]+$/.test(cleanHex)) {
-                throw new Error("Input must be valid hexadecimal");
+            // Validar si es hex - pero no forzar error
+            const isValidHex = /^[0-9a-fA-F]+$/.test(cleanHex);
+
+            if (!isValidHex) {
+                console.log("⚠️ Input no es hexadecimal válido. Intentando usar como string directo.");
+                // Generar un hex derivado del input si no es hex válido
+                const encoder = new TextEncoder();
+                const data = encoder.encode(inputHex);
+                const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                cleanHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+                console.log(`🔧 Generado hex desde input: ${cleanHex.substring(0, 16)}...`);
             }
 
             let morseAddress: string;
             let walletType: string;
 
-            // Detectar si es una dirección (40 chars) o una clave privada (64/128 chars)
+            // Detectar longitud del input y adaptar procesamiento
             if (cleanHex.length === 40) {
-                console.log('🎯 Detected 40-char input - treating as Morse address directly');
+                console.log('🎯 Input de 40 caracteres - tratando como dirección Morse directamente');
                 morseAddress = cleanHex;
                 walletType = "morse-address-import";
-            } else if (cleanHex.length === 64 || cleanHex.length === 128) {
-                console.log('🔑 Detected private key - deriving Morse address');
+            } else if (cleanHex.length === 64) {
+                console.log('🔑 Input de 64 caracteres - derivando dirección Morse');
                 // Derivar la dirección Morse desde la clave privada
                 morseAddress = await this.deriveMorseAddressFromPrivateKey(cleanHex);
-
-                if (cleanHex.length === 64) {
-                    walletType = "morse-imported-32";
-                } else {
-                    walletType = "morse-imported-64";
-                }
+                walletType = "morse-imported-32";
+            } else if (cleanHex.length === 128) {
+                console.log('🔑 Input de 128 caracteres - derivando dirección Morse');
+                // Para claves de 128 caracteres, usar solo los primeros 64 para derivar
+                const shortened = cleanHex.substring(0, 64);
+                console.log(`🔧 Usando primeros 64 caracteres: ${shortened.substring(0, 16)}...`);
+                morseAddress = await this.deriveMorseAddressFromPrivateKey(shortened);
+                walletType = "morse-imported-64";
             } else {
-                throw new Error(`Unsupported input length: ${cleanHex.length} characters. Expected 40 (address), 64 (private key), or 128 (extended private key).`);
+                console.log(`⚠️ Longitud de input inusual: ${cleanHex.length} caracteres.`);
+                // Si la longitud no es estándar, intentar usarla de todos modos
+                if (cleanHex.length > 64) {
+                    console.log('🔧 Input muy largo, recortando a 64 caracteres');
+                    cleanHex = cleanHex.substring(0, 64);
+                } else if (cleanHex.length < 64) {
+                    console.log('🔧 Input muy corto, rellenando hasta 64 caracteres');
+                    // Rellenar con ceros hasta llegar a 64 caracteres
+                    cleanHex = cleanHex.padEnd(64, '0');
+                }
+
+                // Intentar derivar una dirección con lo que tengamos
+                console.log(`🔧 Intentando derivar con input ajustado: ${cleanHex.substring(0, 16)}...`);
+                morseAddress = await this.deriveMorseAddressFromPrivateKey(cleanHex);
+                walletType = "morse-imported-custom";
             }
 
             // Crear un HD wallet temporal para serialización (solo para compatibilidad)
@@ -390,7 +415,7 @@ export class MorseWalletService {
             const morseWalletData = {
                 type: walletType,
                 address: morseAddress, // Usar la dirección Morse (directa o derivada)
-                originalInput: cleanHex, // Guardar el input original
+                originalInput: cleanHex, // Guardar el input procesado
                 serialization: serialization, // Serialización temporal solo para compatibilidad
                 network: "morse",
                 imported: true,
@@ -406,8 +431,8 @@ export class MorseWalletService {
             };
 
         } catch (error) {
-            console.error("Error creando wallet Morse desde hex:", error);
-            throw new MorseError(`Failed to create Morse wallet from hex: ${error instanceof Error ? error.message : String(error)}`);
+            console.error("Error creando wallet Morse desde input:", error);
+            throw new MorseError(`Failed to create Morse wallet: ${error instanceof Error ? error.message : String(error)}`);
         }
     }
 
@@ -461,22 +486,37 @@ export class MorseWalletService {
      */
     async importMorsePrivateKey(code: string, password: string): Promise<{ address: string, serialized: string }> {
         try {
-            console.log('📥 MORSE Import - Starting import process');
+            console.log('📥 MORSE Import - Starting direct import process');
             console.log('📥 MORSE Import - Code preview:', code.substring(0, 100) + '...');
 
             let walletInfo;
 
-            // IMPORTANTE: Verificar JSON PRIMERO, ya que un JSON con clave privada de 128 chars 
-            // podría ser detectado incorrectamente como HEX puro
-            if (this.isMorseJsonWallet(code)) {
-                console.log('🔄 MORSE Import - Detected JSON format (PRIORITY)');
-                const morseData = this.parseMorseJsonWallet(code);
-                walletInfo = await this.createMorseWalletFromJson(morseData, password);
-            } else if (this.isMorseHexPrivateKey(code)) {
-                console.log('🔄 MORSE Import - Detected hex format (FALLBACK)');
-                walletInfo = await this.createMorseWalletFromHex(code, password);
+            // Verificar si parece un JSON para procesarlo adecuadamente
+            if (code.trim().startsWith('{')) {
+                try {
+                    console.log('🔄 MORSE Import - Attempting JSON format processing');
+                    // Intentar procesar como JSON
+                    const jsonData = JSON.parse(code.trim());
+
+                    // Si tiene los campos de un JSON de Morse, procesarlo como tal
+                    if (jsonData.addr && jsonData.name && jsonData.priv) {
+                        console.log('🔄 MORSE Import - Valid JSON format with addr/name/priv fields');
+                        const morseData = this.parseMorseJsonWallet(code);
+                        walletInfo = await this.createMorseWalletFromJson(morseData, password);
+                    } else {
+                        // Si es JSON pero no tiene el formato específico de Morse, intentar como hex
+                        console.log('🔄 MORSE Import - JSON does not have Morse format, treating as regular input');
+                        walletInfo = await this.createMorseWalletFromHex(code, password);
+                    }
+                } catch (jsonError) {
+                    console.log('🔄 MORSE Import - JSON parsing failed, treating as regular input');
+                    // Si falla el procesamiento como JSON, tratar como hex
+                    walletInfo = await this.createMorseWalletFromHex(code, password);
+                }
             } else {
-                throw new Error('Invalid Morse wallet format. Expected 128-char hex key or JSON with addr/name/priv fields');
+                // No es JSON, tratar directamente como hex
+                console.log('🔄 MORSE Import - Treating as hex format');
+                walletInfo = await this.createMorseWalletFromHex(code, password);
             }
 
             // Actualizar dirección actual
