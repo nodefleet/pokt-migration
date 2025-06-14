@@ -3,6 +3,7 @@ import { NETWORKS, STORAGE_KEYS } from './config';
 import { morseWalletService } from './MorseWallet';
 import { storageService } from './storage.service';
 import { useImportMnemonic, useImportWallet } from './ShannonWallet';
+import { address } from 'framer-motion/client';
 
 export interface WalletInfo {
     address: string;
@@ -531,15 +532,159 @@ export class WalletService {
      */
     async migrateFromMorseToShannon(morseAddress: string, shannonAddress: string): Promise<boolean> {
         try {
-            // Implementar la lógica de migración según la documentación de Pocket Network
-            console.log(`Migrating wallet from Morse (${morseAddress}) to Shannon (${shannonAddress})`);
+            console.log(`Migrando wallet desde Morse (${morseAddress}) a Shannon (${shannonAddress})`);
 
-            // Aquí iría el código de migración real
-            // Por ahora solo devolvemos true para simular éxito
+            // Obtener los datos del wallet Morse
+            const morseWalletData = await storageService.get<any>('morse_wallet');
+            if (!morseWalletData || !morseWalletData.serialized) {
+                throw new Error('No se encontraron datos del wallet Morse');
+            }
+
+            // Preparar datos para el backend
+            let morsePrivateKey: string;
+            let morseWalletJson: any = null;
+
+            try {
+                // Intentar parsear como JSON primero
+                morseWalletJson = JSON.parse(morseWalletData.serialized);
+                if (morseWalletJson && morseWalletJson.priv) {
+                    console.log('📋 Detectado wallet Morse en formato JSON');
+                    // Extraer clave privada para uso alternativo
+                    morsePrivateKey = morseWalletJson.priv;
+                } else {
+                    throw new Error('Formato de wallet Morse no reconocido');
+                }
+            } catch (e) {
+                // Si no es JSON, usar directamente como clave privada
+                console.log('📋 Usando wallet Morse como clave privada directa');
+                morsePrivateKey = morseWalletData.serialized;
+                morseWalletJson = null;
+            }
+
+            // Asegurar que la clave privada no tenga prefijo 0x
+            const cleanPrivateKey = morsePrivateKey.startsWith('0x')
+                ? morsePrivateKey.substring(2)
+                : morsePrivateKey;
+
+            console.log('Clave privada Morse obtenida, enviando al servicio de migración...');
+
+            // Verificar si tenemos acceso al servicio de migración backend
+            const backendUrl = 'http://localhost:3001'; // URL del backend de migración
+            const migrationEndpoint = `${backendUrl}/api/migration/migrate`;
+            const shannon = await storageService.get<any>('shannon_wallet');
+
+            // Preparar payload para el backend
+            let payload: any = {};
+
+            // Si tenemos el objeto JSON completo, enviarlo con preferencia
+            if (morseWalletJson) {
+                // Enviar el objeto JSON completo de la wallet Morse
+                payload = {
+                    morsePrivateKey: JSON.stringify({
+                        addr: morseWalletJson.address || morseAddress,
+                        name: morseWalletJson.name || `wallet-${morseAddress.substring(0, 8)}`,
+                        priv: morseWalletJson.priv,
+                        pass: morseWalletJson.pass || "",
+                        account: morseWalletJson.account || 0
+                    }),
+                    shannonAddress: {
+                        address: shannonAddress,
+                        signature: shannon.serialized
+                    }
+                };
+            } else {
+                // Solo enviar la clave privada
+                payload = {
+                    morsePrivateKey: cleanPrivateKey,
+                    shannonAddress: {
+                        address: shannonAddress,
+                        signature: shannon.serialized
+                    }
+                };
+            }
+
+            // Verificar backend antes de enviar
+            try {
+                const healthResponse = await fetch(`${backendUrl}/api/migration/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (!healthResponse.ok) {
+                    throw new Error(`Migration backend service is not responding. Status: ${healthResponse.status}`);
+                }
+
+                const healthData = await healthResponse.json();
+                if (!healthData.status || healthData.status !== 'ok') {
+                    throw new Error('Migration backend service is not ready');
+                }
+
+                if (healthData.pocketd && !healthData.pocketd.available) {
+                    throw new Error(`Migration CLI tool is not available: ${healthData.pocketd.error || 'Unknown error'}`);
+                }
+
+                console.log('✅ Migration backend service is ready');
+            } catch (healthError: any) {
+                console.error('❌ Migration backend health check failed:', healthError);
+                throw new Error(`Migration service is not available: ${healthError.message}`);
+            }
+
+            // Enviar solicitud al backend
+            const response = await fetch(migrationEndpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                // Intentar obtener detalles del error
+                let errorMessage = `Error ${response.status}: ${response.statusText}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage = errorData.details || errorData.error || errorMessage;
+                } catch (e) { }
+
+                console.error('Error en la migración:', errorMessage);
+
+                // Mensajes de error específicos según el tipo de error
+                if (errorMessage.includes('connection refused') || errorMessage.includes('Post "http://localhost:26657"')) {
+                    throw new Error('Cannot connect to Shannon network node. Please try again later.');
+                } else if (errorMessage.includes('Bad Gateway') || errorMessage.includes('502')) {
+                    throw new Error('Shannon network node is currently unavailable. Please try again later.');
+                } else if (errorMessage.includes('Usage:') || errorMessage.includes('claim-accounts')) {
+                    throw new Error('Migration command configuration error. Please contact support.');
+                } else {
+                    throw new Error(errorMessage);
+                }
+            }
+
+            // Procesar respuesta exitosa
+            const result = await response.json();
+            console.log('Resultado de la migración:', result);
+
+            // Verificar tanto el éxito de la comunicación como el resultado real de la migración
+            const migrationSuccess = result.success && result.data?.result?.success !== false;
+
+            if (!migrationSuccess) {
+                // La migración falló - extraer el mensaje de error del resultado interno
+                const errorMessage = result.data?.result?.error ||
+                    result.data?.error ||
+                    result.error ||
+                    'Migration process failed';
+
+                throw new Error(`Migration failed: ${errorMessage}`);
+            }
+
+            console.log('✅ Migración completada con éxito');
             return true;
+
         } catch (error) {
-            console.error('Error migrating wallet:', error);
-            return false;
+            console.error('Error migrando wallet:', error);
+            throw error; // Relanzar para que el componente pueda manejarlo
         }
     }
 

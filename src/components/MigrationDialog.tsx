@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MigrationService } from '../controller/MigrationService';
 import { storageService } from '../controller/storage.service';
+import { walletService } from '../controller/WalletService';
 
 // FontAwesome icons as components
 const X = ({ className }: { className?: string }) => <i className={`fas fa-times ${className || ''}`}></i>;
@@ -194,6 +195,36 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
         }
     };
 
+    const checkMigrationBackendAvailability = async () => {
+        try {
+            // Get backend URL from environment
+            const backendUrl = import.meta.env.VITE_MIGRATION_API_URL || 'http://localhost:3001';
+
+            console.log(`🔍 Verificando disponibilidad del backend en ${backendUrl}/api/migration/health`);
+
+            // Check backend health - verificación simple
+            // Si el backend responde correctamente (sin importar el contenido), lo consideramos disponible
+            const response = await fetch(`${backendUrl}/api/migration/health`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            // Si la respuesta es exitosa (status 200-299), consideramos el servicio disponible
+            if (response.ok) {
+                console.log('✅ Backend disponible, status:', response.status);
+                return true;
+            }
+
+            console.error(`❌ Backend respondió con error: ${response.status} ${response.statusText}`);
+            return false;
+        } catch (error) {
+            console.error('❌ Error conectando al backend:', error);
+            return false;
+        }
+    };
+
     const handleMigration = async () => {
         if (!selectedMorseWallet || !selectedShannonWallet) {
             setError('Please select both Morse and Shannon wallets');
@@ -222,6 +253,14 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             console.log('📤 Morse wallet:', morseWallet.address);
             console.log('📥 Shannon wallet:', shannonWallet.address);
 
+            // Verificar que el backend de migración esté disponible
+            const backendAvailable = await checkMigrationBackendAvailability();
+            if (!backendAvailable) {
+                throw new Error(
+                    'Migration backend service is not available. Please ensure the migration service is running on http://localhost:3001'
+                );
+            }
+
             // Verificar primero si la cuenta Shannon existe en la red
             try {
                 console.log('🔍 Verificando si la cuenta Shannon existe en la red...');
@@ -229,14 +268,18 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
                 // Obtener información de la wallet Morse para mostrar el balance
                 const morseWalletData = storageService.getSync<any>('morse_wallet');
-                let morseBalance = '0.99'; // Valor por defecto
+                let morseBalance = '0.00';
                 let moredata = null;
 
                 if (morseWalletData && morseWalletData.serialized) {
                     try {
-                        moredata = JSON.parse(morseWalletData.serialized);
+                        moredata = morseWalletData.serialized;
                         if (moredata && moredata.balance) {
-                            morseBalance = moredata.balance;
+                            const balanceNum = parseFloat(moredata.balance);
+                            morseBalance = balanceNum.toLocaleString('en-US', {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2
+                            });
                         }
                     } catch (e) {
                         console.error('Error parsing morse wallet data', e);
@@ -297,8 +340,6 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                 // Continuar con el proceso aunque falle la verificación
             }
 
-            // Preparar los datos en el formato que espera el backend
-            // La clave privada Morse puede estar en formato JSON o hex
             let morseKeyData = morseWallet.privateKey;
 
             // Si tenemos información completa de la wallet, enviarla como JSON
@@ -310,6 +351,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             } catch (e) {
                 console.error('Error parsing morse wallet data', e);
             }
+            const shannonWallets = storageService.getSync<any>('shannon_wallet');
 
             if (morseWallet.address && morseWallet.privateKey && moredata) {
                 // Enviar la wallet Morse completa en formato JSON
@@ -325,13 +367,17 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             // Construir el payload con los nombres de campos correctos que espera el backend
             const migrationData = {
                 morsePrivateKey: morseKeyData, // Usar campo en singular
-                shannonAddress: shannonWallet.address // Usar shannonAddress en lugar de signingAccount
+                shannonAddress: {
+                    address: shannonWallet.address,
+                    signature: shannonWallets.serialized
+                } // Usar shannonAddress en lugar de signingAccount
             };
 
             console.log('📡 Sending migration request to backend...');
 
-            // Get backend URL from environment
+            // URL fija para el backend de migración local
             const backendUrl = import.meta.env.VITE_MIGRATION_API_URL || 'http://localhost:3001';
+            console.log(`🚀 Enviando solicitud de migración a: ${backendUrl}/api/migration/migrate`);
 
             // Send to backend endpoint
             const response = await fetch(`${backendUrl}/api/migration/migrate`, {
@@ -343,8 +389,18 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             });
 
             if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.message || `Migration failed: ${response.status} ${response.statusText}`);
+                console.error(`❌ Backend respondió con error: ${response.status} ${response.statusText}`);
+                let errorMessage = `Migration failed: ${response.status} ${response.statusText}`;
+
+                try {
+                    const errorData = await response.json();
+                    console.error('Error details:', errorData);
+                    errorMessage = errorData.message || errorData.error || errorMessage;
+                } catch (e) {
+                    console.error('Could not parse error response:', e);
+                }
+
+                throw new Error(errorMessage);
             }
 
             const result = await response.json();
@@ -362,11 +418,13 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
                 console.error('❌ Migration failed:', errorMessage);
 
-                // Mostrar un error más específico si es un problema de conexión
+                // Mostrar un error más específico según el tipo de error
                 if (errorMessage.includes('connection refused') || errorMessage.includes('Post "http://localhost:26657"')) {
-                    throw new Error('Cannot connect to local Pocket Network node. Please ensure the node is running on localhost:26657');
+                    throw new Error('Cannot connect to Shannon network node. Please try again later.');
+                } else if (errorMessage.includes('Bad Gateway') || errorMessage.includes('502')) {
+                    throw new Error('Shannon network node is currently unavailable. Please try again later.');
                 } else if (errorMessage.includes('Usage:') || errorMessage.includes('claim-accounts')) {
-                    throw new Error('Migration command error. Check backend configuration and pocketd command');
+                    throw new Error('Migration command configuration error. Please contact support.');
                 } else {
                     throw new Error(`Migration error: ${errorMessage}`);
                 }
@@ -483,17 +541,45 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                 <p className="text-amber-200/80 text-xs pl-6 mt-1">
                                     It can be migrated with {
                                         (() => {
-                                            const morseWalletData = storageService.getSync<any>('morse_wallet');
-                                            let morseBalance = '0.99';
-                                            if (morseWalletData && morseWalletData.serialized) {
-                                                try {
-                                                    const data = JSON.parse(morseWalletData.serialized);
-                                                    if (data && data.balance) {
-                                                        morseBalance = data.balance;
+                                            try {
+                                                // Obtener la dirección seleccionada
+                                                const selectedWallet = morseWallets.find(w => w.id === selectedMorseWallet);
+                                                if (!selectedWallet) return '0.00';
+
+                                                // Forzar actualización del balance (esto es asíncrono, pero al menos inicia la actualización)
+                                                setTimeout(async () => {
+                                                    const balance = await walletService.getBalance(selectedWallet.address);
+                                                    // Actualizar el elemento DOM directamente con el balance actual
+                                                    const balanceElement = document.getElementById('morseBalanceDisplay');
+                                                    if (balanceElement && balance) {
+                                                        const balanceNum = parseFloat(balance);
+                                                        balanceElement.innerText = balanceNum.toLocaleString('en-US', {
+                                                            minimumFractionDigits: 2,
+                                                            maximumFractionDigits: 2
+                                                        });
                                                     }
-                                                } catch (e) { }
+                                                }, 100);
+
+                                                // Mientras tanto, intentar obtener del localStorage también
+                                                const morseWalletData = storageService.getSync<any>('morse_wallet');
+                                                let morseBalance = '0.00';
+                                                if (morseWalletData && morseWalletData.serialized) {
+                                                    try {
+                                                        const data = JSON.parse(morseWalletData.serialized);
+                                                        if (data && data.balance) {
+                                                            const balanceNum = parseFloat(data.balance);
+                                                            morseBalance = balanceNum.toLocaleString('en-US', {
+                                                                minimumFractionDigits: 2,
+                                                                maximumFractionDigits: 2
+                                                            });
+                                                        }
+                                                    } catch (e) { }
+                                                }
+                                                return <span id="morseBalanceDisplay">{morseBalance}</span>;
+                                            } catch (e) {
+                                                console.error("Error obteniendo balance:", e);
+                                                return '0.00';
                                             }
-                                            return morseBalance;
                                         })()
                                     } POKT
                                 </p>

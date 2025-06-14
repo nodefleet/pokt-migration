@@ -83,14 +83,6 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         // Solo intentar obtener datos si tenemos una dirección válida
         if (walletAddress) {
             fetchBalanceAndTransactions();
-            // Actualizar datos cada 30 segundos si no estamos en modo offline
-            const intervalId = setInterval(() => {
-                if (walletManager && walletManager.isOfflineMode && !walletManager.isOfflineMode()) {
-                    fetchBalanceAndTransactions();
-                }
-            }, 30000);
-
-            return () => clearInterval(intervalId);
         }
     }, [walletManager, walletAddress, network, isMainnet, fetchBalanceAndTransactions]);
 
