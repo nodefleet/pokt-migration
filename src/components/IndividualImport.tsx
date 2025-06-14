@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { IndividualImportProps, WalletImportResult } from '../types';
+import { IndividualImportProps } from '../types';
 import { ERROR_MESSAGES } from '../controller/config';
-import { NetworkType } from '../controller/WalletManager';
 import { useNavigate } from 'react-router-dom';
+import { storageService } from '../controller/storage.service';
 
 const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletImport, onCreateWallet }) => {
     const [morseOpen, setMorseOpen] = useState(false);
@@ -20,7 +20,21 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     const [morseLoading, setMorseLoading] = useState(false);
     const [showGuide, setShowGuide] = useState(false);
 
+    // Imported wallet lists for this session
+    const [morseWalletList, setMorseWalletList] = useState<any[]>([]);
+    const [shannonWalletList, setShannonWalletList] = useState<any[]>([]);
+
     const navigate = useNavigate();
+
+    // Cargar listas desde storage al montar
+    useEffect(() => {
+        (async () => {
+            const morseArr = (await storageService.get<any[]>('morse_wallets')) || [];
+            const shannonArr = (await storageService.get<any[]>('shannon_wallets')) || [];
+            setMorseWalletList(morseArr);
+            setShannonWalletList(shannonArr);
+        })();
+    }, []);
 
     const toggleMorse = () => {
         setMorseOpen(!morseOpen);
@@ -43,32 +57,64 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
         setError('');
 
         try {
-            console.log('🟡 Importing MORSE via main.tsx...');
+            console.log('🟡 Importing MORSE wallet(s)...');
 
-            // Detectar si es JSON o clave privada
             const trimmedInput = morseInput.trim();
-            let isJsonFormat = false;
 
+            // Detect if input is JSON array of wallets
+            let walletArray: any[] | null = null;
             try {
                 const parsed = JSON.parse(trimmedInput);
-                if (parsed.addr && parsed.name && parsed.priv) {
-                    isJsonFormat = true;
-                    console.log('✅ Detected Morse JSON keyfile format');
+                if (Array.isArray(parsed)) walletArray = parsed;
+            } catch { /* not JSON */ }
+
+            const inputsToProcess = walletArray ? walletArray : [trimmedInput];
+
+            for (const item of inputsToProcess) {
+                let serialized: string;
+                if (typeof item === 'string') {
+                    serialized = item;
+                } else {
+                    serialized = JSON.stringify(item);
                 }
-            } catch {
-                console.log('📝 Detected private key format (not JSON)');
+
+                // Import via provided callback (first one to WalletService)
+                await onWalletImport(serialized, morsePassword.trim() || 'default', 'morse');
+
+                // Save to storage array
+                const existing: any[] = (await storageService.get<any[]>('morse_wallets')) || [];
+                let parsed: any = null;
+                try { parsed = typeof item === 'string' ? JSON.parse(item) : item; } catch { }
+
+                // Derive address (if possible) for duplicate detection
+                const addr = parsed?.addr || parsed?.address || '';
+
+                // Avoid duplicates by serialized content or address
+                const isDuplicate = existing.some((w: any) =>
+                    w.serialized === serialized ||
+                    (addr && (w.parsed?.addr === addr || w.parsed?.address === addr))
+                );
+
+                if (isDuplicate) {
+                    console.log(`⚠️ Wallet already imported (addr: ${addr || 'unknown'}) – skipping`);
+                    continue; // Skip this wallet
+                }
+
+                existing.push({
+                    id: 'morse_' + Date.now() + Math.random().toString(16).slice(2, 6),
+                    serialized,
+                    parsed,
+                    network: 'morse',
+                    timestamp: Date.now()
+                });
+                await storageService.set('morse_wallets', existing);
+                setMorseWalletList(existing);
             }
 
-            // Para JSON keyfiles, la contraseña puede ser opcional
-            // Para claves privadas, usar contraseña por defecto si no se proporciona
-            const passwordToUse = morsePassword.trim() || 'default';
-
-            // Usar onWalletImport del main.tsx
-            await onWalletImport(trimmedInput, passwordToUse, 'morse');
-
-            console.log('✅ MORSE wallet imported successfully via main.tsx');
-            setError('');
+            // Cleanup
+            setMorseInput('');
             setMorseError('');
+            console.log('✅ Morse wallets imported:', inputsToProcess.length);
 
         } catch (error: any) {
             console.error('❌ Error importing Morse wallet:', error);
@@ -83,7 +129,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             } else if (error.message?.includes('Invalid')) {
                 setMorseError('Invalid format. Use the complete JSON keyfile or the 128-character private key.');
             } else if (error.message?.includes('password')) {
-                setMorseError('Error con la contraseña. Verifique que sea correcta.');
+                setMorseError('Error with the password. Verify that it is correct.');
             } else {
                 setMorseError('Error importing Morse wallet. Verify the format: complete JSON keyfile or hexadecimal private key.');
             }
@@ -101,8 +147,40 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
         try {
             setLoading(true);
-            // Usar onWalletImport del main.tsx en lugar del hook directo
+            // 1) Importar en WalletService
             await onWalletImport(shannonInput, shannonPassword, 'shannon');
+
+            // 2) Guardar en storage
+            const existing: any[] = (await storageService.get<any[]>('shannon_wallets')) || [];
+            let parsed: any = null;
+            try { parsed = JSON.parse(shannonInput.trim()); } catch { }
+
+            // Derive address for duplicate detection
+            const addr = parsed?.address || '';
+
+            const isDuplicate = existing.some((w: any) =>
+                w.serialized === shannonInput.trim() ||
+                (addr && w.parsed?.address === addr)
+            );
+
+            if (!isDuplicate) {
+                existing.push({
+                    id: 'shannon_' + Date.now(),
+                    serialized: shannonInput.trim(),
+                    parsed,
+                    network: 'shannon',
+                    timestamp: Date.now()
+                });
+            } else {
+                console.log(`⚠️ Shannon wallet already imported (addr: ${addr || 'unknown'}) – skipping`);
+            }
+
+            await storageService.set('shannon_wallets', existing);
+
+            setShannonWalletList(existing);
+
+            // Reset
+            setShannonInput('');
             console.log("Shannon Wallet imported successfully via main.tsx");
         } catch (error: any) {
             console.error('Error importing Shannon wallet:', error);
@@ -121,7 +199,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
         try {
             setLoading(true);
-            // Usar onCreateWallet del main.tsx en lugar del hook directo
+            // Call onCreateWallet from main.tsx instead of using the direct hook
             await onCreateWallet(password, 'shannon');
             console.log("Shannon Wallet created successfully via main.tsx");
         } catch (error: any) {
@@ -210,12 +288,12 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 >
                     <i className="fas fa-exclamation-triangle text-yellow-400 text-xl mr-4 mt-1"></i>
                     <div>
-                        <h3 className="font-semibold mb-1">Red Morse en Migración</h3>
+                        <h3 className="font-semibold mb-1">Red Morse in Migration</h3>
                         <p className="text-sm">
                             {ERROR_MESSAGES.MORSE_DEPRECATED}
                         </p>
                         <p className="text-sm mt-2">
-                            Recomend select Shannon for new wallets or migrate your Morse funds to Shannon.
+                            Recommend select Shannon for new wallets or migrate your Morse funds to Shannon.
                         </p>
                     </div>
                 </motion.div>
@@ -294,9 +372,30 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                         {/* Separador */}
                                         <div className="flex items-center gap-3">
                                             <div className="flex-1 h-px bg-gray-600"></div>
-                                            <span className="text-xs text-gray-400">O</span>
+                                            <span className="text-xs text-gray-400">OR</span>
                                             <div className="flex-1 h-px bg-gray-600"></div>
                                         </div>
+
+                                        {/* Lista de wallets importadas */}
+                                        {morseWalletList.length > 0 && (
+                                            <div className="space-y-2 mb-4">
+                                                <p className="text-xs text-gray-300">Imported Morse wallets:</p>
+                                                <ul className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                                                    {morseWalletList.map(w => (
+                                                        <li key={w.id} className="flex items-center justify-between bg-gray-800/60 px-3 py-1 rounded-lg text-xs text-gray-200">
+                                                            <span className="truncate mr-2">{w.parsed?.addr ? w.parsed.addr : (w.serialized.substring(0, 10) + '...')}</span>
+                                                            <button className="text-red-400 hover:text-red-300" onClick={async () => {
+                                                                const updated = morseWalletList.filter(x => x.id !== w.id);
+                                                                setMorseWalletList(updated);
+                                                                await storageService.set('morse_wallets', updated);
+                                                            }}>
+                                                                <i className="fas fa-trash"></i>
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
 
                                         {/* Textarea para pegar JSON/clave */}
                                         <div className="space-y-2">
@@ -313,7 +412,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
   "pass": ""
 }
 
-O solo la clave privada hex (128 caracteres)'
+Or just the hex private key (128 characters)'
                                                 className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300 resize-none min-h-[120px] text-sm font-mono"
                                                 value={morseInput}
                                                 onChange={(e) => setMorseInput(e.target.value)}
@@ -344,7 +443,7 @@ O solo la clave privada hex (128 caracteres)'
                                             {morseLoading ? (
                                                 <>
                                                     <i className="fas fa-spinner fa-spin"></i>
-                                                    Importando...
+                                                    Importing...
                                                 </>
                                             ) : (
                                                 <>
@@ -442,9 +541,30 @@ O solo la clave privada hex (128 caracteres)'
                                         {/* Separador */}
                                         <div className="flex items-center gap-3">
                                             <div className="flex-1 h-px bg-gray-600"></div>
-                                            <span className="text-xs text-gray-400">O</span>
+                                            <span className="text-xs text-gray-400">OR</span>
                                             <div className="flex-1 h-px bg-gray-600"></div>
                                         </div>
+
+                                        {/* Lista de wallets Shannon importadas */}
+                                        {shannonWalletList.length > 0 && (
+                                            <div className="space-y-2 mb-4">
+                                                <p className="text-xs text-gray-300">Imported Shannon wallets:</p>
+                                                <ul className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                                                    {shannonWalletList.map(w => (
+                                                        <li key={w.id} className="flex items-center justify-between bg-gray-800/60 px-3 py-1 rounded-lg text-xs text-gray-200">
+                                                            <span className="truncate mr-2">{w.parsed?.address ? w.parsed.address : (w.serialized.substring(0, 10) + '...')}</span>
+                                                            <button className="text-red-400 hover:text-red-300" onClick={async () => {
+                                                                const updated = shannonWalletList.filter(x => x.id !== w.id);
+                                                                setShannonWalletList(updated);
+                                                                await storageService.set('shannon_wallets', updated);
+                                                            }}>
+                                                                <i className="fas fa-trash"></i>
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
 
                                         {/* Textarea para pegar mnemónico/JSON/clave */}
                                         <div className="space-y-2">

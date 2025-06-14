@@ -36,7 +36,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
     morseAddress
 }) => {
     const navigate = useNavigate();
-    const [selectedMorseWallet, setSelectedMorseWallet] = useState<string>('');
+    const [selectedMorseWallets, setSelectedMorseWallets] = useState<string[]>([]);
     const [selectedShannonWallet, setSelectedShannonWallet] = useState<string>('');
     const [morseWallets, setMorseWallets] = useState<WalletOption[]>([]);
     const [shannonWallets, setShannonWallets] = useState<WalletOption[]>([]);
@@ -63,7 +63,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
     // Extraer la lógica de verificación a una función separada para reutilizarla
     const verifySelectedShannonAccount = () => {
-        const shannonWallet = shannonWallets.find(w => w.id === selectedShannonWallet);
+        const shannonWallet = shannonWallets.find((w: WalletOption) => w.id === selectedShannonWallet);
         if (!shannonWallet || !shannonWallet.address) return;
 
         const statusContainer = document.getElementById('shannonStatusContainer');
@@ -129,66 +129,70 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
         try {
             console.log('🔄 Loading wallets from localStorage...');
 
-            // Load Morse wallets - use correct key 'morse_wallet'
-            const morseWallet = await storageService.get<any>('morse_wallet');
-            console.log('📥 Loaded morse_wallet:', morseWallet);
-
+            // ---- MORSE wallets ---- //
+            const storedMorseArr = await storageService.get<any[]>('morse_wallets');
             const morseOptions: WalletOption[] = [];
-            if (morseWallet && morseWallet.parsed?.address) {
-                morseOptions.push({
-                    id: 'morse_1',
-                    name: `Morse Wallet (${morseWallet.parsed.address.substring(0, 8)}...)`,
-                    address: morseWallet.parsed.address,
-                    type: 'morse',
-                    privateKey: morsePrivateKey // Use the provided private key
+            if (Array.isArray(storedMorseArr) && storedMorseArr.length > 0) {
+                storedMorseArr.forEach((item, idx) => {
+                    const addr = item.parsed?.addr || `morse_${idx}`;
+                    morseOptions.push({
+                        id: item.id,
+                        name: `Morse Wallet (${addr.substring(0, 8)}...)`,
+                        address: addr,
+                        type: 'morse',
+                        privateKey: item.serialized // Puede ser JSON o hex
+                    });
                 });
+            } else {
+                // Fallback legacy single key
+                const legacyMorse = await storageService.get<any>('morse_wallet');
+                if (legacyMorse && legacyMorse.parsed?.address) {
+                    morseOptions.push({
+                        id: 'morse_legacy',
+                        name: `Morse Wallet (${legacyMorse.parsed.address.substring(0, 8)}...)`,
+                        address: legacyMorse.parsed.address,
+                        type: 'morse',
+                        privateKey: legacyMorse.serialized || ''
+                    });
+                }
             }
 
-            // Load Shannon wallets - use correct key 'shannon_wallet'
-            const shannonWallet = await storageService.get<any>('shannon_wallet');
-            console.log('📥 Loaded shannon_wallet:', shannonWallet);
-
+            // ---- SHANNON wallets ---- //
+            const storedShannonArr = await storageService.get<any[]>('shannon_wallets');
             const shannonOptions: WalletOption[] = [];
-
-            // Check for the new format (from WalletService)
-            if (shannonWallet && shannonWallet.parsed?.address) {
-                shannonOptions.push({
-                    id: 'shannon_1',
-                    name: `Shannon Wallet (${shannonWallet.parsed.address.substring(0, 8)}...)`,
-                    address: shannonWallet.parsed.address,
-                    type: 'shannon'
+            if (Array.isArray(storedShannonArr) && storedShannonArr.length > 0) {
+                storedShannonArr.forEach((item, idx) => {
+                    const addr = item.parsed?.address || `shannon_${idx}`;
+                    shannonOptions.push({
+                        id: item.id,
+                        name: `Shannon Wallet (${addr.substring(0, 8)}...)`,
+                        address: addr,
+                        type: 'shannon',
+                        privateKey: item.serialized // Usaremos como signature
+                    });
                 });
+            } else {
+                const legacyShannon = await storageService.get<any>('shannon_wallet');
+                if (legacyShannon && legacyShannon.parsed?.address) {
+                    shannonOptions.push({
+                        id: 'shannon_legacy',
+                        name: `Shannon Wallet (${legacyShannon.parsed.address.substring(0, 8)}...)`,
+                        address: legacyShannon.parsed.address,
+                        type: 'shannon',
+                        privateKey: legacyShannon.serialized || ''
+                    });
+                }
             }
-
-            // Also check for zustand store format (direct address field)
-            else if (shannonWallet && shannonWallet.address && !shannonOptions.some(w => w.address === shannonWallet.address)) {
-                shannonOptions.push({
-                    id: 'shannon_store',
-                    name: `Shannon Wallet (${shannonWallet.address.substring(0, 8)}...)`,
-                    address: shannonWallet.address,
-                    type: 'shannon'
-                });
-            }
-
-            console.log('✅ Morse wallets found:', morseOptions.length);
-            console.log('✅ Shannon wallets found:', shannonOptions.length);
 
             setMorseWallets(morseOptions);
             setShannonWallets(shannonOptions);
 
-            // Auto-select if only one option available
-            if (morseOptions.length === 1) {
-                setSelectedMorseWallet(morseOptions[0].id);
-            }
-            if (shannonOptions.length === 1) {
-                setSelectedShannonWallet(shannonOptions[0].id);
-            }
+            // Auto select
+            if (morseOptions.length > 0) setSelectedMorseWallets(morseOptions.map(o => o.id));
+            if (shannonOptions.length === 1) setSelectedShannonWallet(shannonOptions[0].id);
 
-            // Si tenemos todas las opciones, mostrar los status
-            if (morseOptions.length > 0 && shannonOptions.length > 0) {
-                setSuccessMessage(null);
-                setError(null);
-            }
+            setSuccessMessage(null);
+            setError(null);
         } catch (error) {
             console.error('❌ Error loading wallets:', error);
             setError('Error loading wallets from storage');
@@ -226,21 +230,23 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
     };
 
     const handleMigration = async () => {
-        if (!selectedMorseWallet || !selectedShannonWallet) {
-            setError('Please select both Morse and Shannon wallets');
+        if (selectedMorseWallets.length === 0 || !selectedShannonWallet) {
+            setError('Please select Morse wallet(s) and one Shannon wallet');
             return;
         }
 
-        const morseWallet = morseWallets.find(w => w.id === selectedMorseWallet);
-        const shannonWallet = shannonWallets.find(w => w.id === selectedShannonWallet);
+        // Obtener los objetos seleccionados
+        const selectedMorse: WalletOption[] = morseWallets.filter((w: WalletOption) => selectedMorseWallets.includes(w.id));
+        const shannonWallet: WalletOption | undefined = shannonWallets.find((w: WalletOption) => w.id === selectedShannonWallet);
 
-        if (!morseWallet || !shannonWallet) {
+        if (selectedMorse.length === 0 || !shannonWallet) {
             setError('Selected wallets not found');
             return;
         }
 
-        if (!morseWallet.privateKey) {
-            setError('Morse private key not available');
+        // Verificar que cada wallet Morse tenga privateKey disponible
+        if (selectedMorse.some((w: WalletOption) => !w.privateKey)) {
+            setError('Some Morse wallets have no private key available');
             return;
         }
 
@@ -250,216 +256,53 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
         try {
             console.log('🚀 Starting migration process...');
-            console.log('📤 Morse wallet:', morseWallet.address);
+            console.log('📤 Morse wallets:', selectedMorse.map((w: WalletOption) => w.address));
             console.log('📥 Shannon wallet:', shannonWallet.address);
 
-            // Verificar que el backend de migración esté disponible
+            // Verificar backend 
             const backendAvailable = await checkMigrationBackendAvailability();
-            if (!backendAvailable) {
-                throw new Error(
-                    'Migration backend service is not available. Please ensure the migration service is running on http://localhost:3001'
-                );
-            }
+            if (!backendAvailable) throw new Error('Migration backend service is not available');
 
-            // Verificar primero si la cuenta Shannon existe en la red
-            try {
-                console.log('🔍 Verificando si la cuenta Shannon existe en la red...');
-                const shannonAddress = shannonWallet.address;
+            // Preparar payload
+            const shannonRaw = await storageService.get<any>('shannon_wallets');
+            const shannonStoredObj = Array.isArray(shannonRaw) ? shannonRaw.find((s: any) => s.id === shannonWallet.id) : null;
+            const shannonSignature = shannonStoredObj?.serialized || '';
 
-                // Obtener información de la wallet Morse para mostrar el balance
-                const morseWalletData = storageService.getSync<any>('morse_wallet');
-                let morseBalance = '0.00';
-                let moredata = null;
-
-                if (morseWalletData && morseWalletData.serialized) {
-                    try {
-                        moredata = morseWalletData.serialized;
-                        if (moredata && moredata.balance) {
-                            const balanceNum = parseFloat(moredata.balance);
-                            morseBalance = balanceNum.toLocaleString('en-US', {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2
-                            });
-                        }
-                    } catch (e) {
-                        console.error('Error parsing morse wallet data', e);
-                    }
-                }
-
-                const accountCheckResponse = await fetch(`https://shannon-grove-api.mainnet.poktroll.com/cosmos/auth/v1beta1/accounts/${shannonAddress}`);
-
-                if (!accountCheckResponse.ok) {
-                    // La cuenta no existe en la red
-                    console.log('⚠️ La cuenta Shannon no existe en la red');
-                    setError(
-                        <div className="space-y-3">
-                            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
-                                <div className="flex items-center space-x-2 mb-2">
-                                    <i className="fas fa-circle-check text-green-500"></i>
-                                    <p className="font-medium text-green-400">Your Morse account is ready.</p>
-                                </div>
-                                <p className="text-amber-200/80 text-sm pl-6">It can be migrated with {morseBalance} POKT</p>
-                            </div>
-
-                            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
-                                <div className="flex items-center space-x-2 mb-2">
-                                    <i className="fas fa-circle-xmark text-red-500"></i>
-                                    <p className="font-medium text-red-400">Your Shannon account doesn't exist.</p>
-                                </div>
-                                <div className="text-white/80 text-sm pl-6">
-                                    <p className="mb-2">You need to receive MACT tokens to activate your account on the network.</p>
-                                    <a
-                                        href="https://faucet.beta.testnet.pokt.network/mact/"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="block text-center mt-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-white font-medium"
-                                    >
-                                        Click here to go to the MACT faucet
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    );
-                    setIsLoading(false);
-                    return;
-                }
-
-                console.log('✅ La cuenta Shannon existe en la red');
-
-                // Si la cuenta Shannon existe, mostrar mensaje pero continuar con la migración
-                setSuccessMessage(
-                    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
-                        <div className="flex items-center space-x-2">
-                            <i className="fas fa-circle-check text-green-500"></i>
-                            <p className="font-medium text-green-400">Your Shannon account exists.</p>
-                        </div>
-                    </div>
-                );
-            } catch (error) {
-                console.error('❌ Error verificando la cuenta Shannon:', error);
-                // Continuar con el proceso aunque falle la verificación
-            }
-
-            let morseKeyData = morseWallet.privateKey;
-
-            // Si tenemos información completa de la wallet, enviarla como JSON
-            const morseWallets = storageService.getSync<any>('morse_wallet');
-            let moredata = null;
-
-            try {
-                moredata = JSON.parse(morseWallets.serialized);
-            } catch (e) {
-                console.error('Error parsing morse wallet data', e);
-            }
-            const shannonWallets = storageService.getSync<any>('shannon_wallet');
-
-            if (morseWallet.address && morseWallet.privateKey && moredata) {
-                // Enviar la wallet Morse completa en formato JSON
-                morseKeyData = JSON.stringify({
-                    addr: moredata.address,
-                    name: moredata.name || `wallet-${morseWallet.address.substring(0, 8)}`,
-                    priv: moredata.priv,
-                    pass: moredata.pass || "",
-                    account: moredata.account || 0
-                });
-            }
-
-            // Construir el payload con los nombres de campos correctos que espera el backend
             const migrationData = {
-                morsePrivateKey: morseKeyData, // Usar campo en singular
+                morseWallets: selectedMorse.map((w: WalletOption) => w.privateKey as string),
                 shannonAddress: {
                     address: shannonWallet.address,
-                    signature: shannonWallets.serialized
-                } // Usar shannonAddress en lugar de signingAccount
+                    signature: shannonSignature || (shannonWallet.privateKey || '')
+                }
             };
 
-            console.log('📡 Sending migration request to backend...');
-
-            // URL fija para el backend de migración local
+            // Enviar
             const backendUrl = import.meta.env.VITE_MIGRATION_API_URL || 'http://localhost:3001';
-            console.log(`🚀 Enviando solicitud de migración a: ${backendUrl}/api/migration/migrate`);
-
-            // Send to backend endpoint
             const response = await fetch(`${backendUrl}/api/migration/migrate`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(migrationData)
             });
 
             if (!response.ok) {
-                console.error(`❌ Backend respondió con error: ${response.status} ${response.statusText}`);
-                let errorMessage = `Migration failed: ${response.status} ${response.statusText}`;
-
-                try {
-                    const errorData = await response.json();
-                    console.error('Error details:', errorData);
-                    errorMessage = errorData.message || errorData.error || errorMessage;
-                } catch (e) {
-                    console.error('Could not parse error response:', e);
-                }
-
-                throw new Error(errorMessage);
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.message || err.error || response.statusText);
             }
 
             const result = await response.json();
-            console.log('📋 Backend response received:', result);
-
-            // CORRECCIÓN: Verificar TANTO el éxito de la comunicación como el resultado real de la migración
-            const migrationSuccess = result.success && result.data?.result?.success !== false;
-
-            if (!migrationSuccess) {
-                // La migración falló - extraer el mensaje de error del resultado interno
-                const errorMessage = result.data?.result?.error ||
-                    result.data?.error ||
-                    result.error ||
-                    'Migration process failed';
-
-                console.error('❌ Migration failed:', errorMessage);
-
-                // Mostrar un error más específico según el tipo de error
-                if (errorMessage.includes('connection refused') || errorMessage.includes('Post "http://localhost:26657"')) {
-                    throw new Error('Cannot connect to Shannon network node. Please try again later.');
-                } else if (errorMessage.includes('Bad Gateway') || errorMessage.includes('502')) {
-                    throw new Error('Shannon network node is currently unavailable. Please try again later.');
-                } else if (errorMessage.includes('Usage:') || errorMessage.includes('claim-accounts')) {
-                    throw new Error('Migration command configuration error. Please contact support.');
-                } else {
-                    throw new Error(`Migration error: ${errorMessage}`);
-                }
-            }
-
-            // Si llegamos aquí, la migración fue exitosa
-            console.log('✅ Migration completed successfully:', result);
-
+            console.log('Migration result:', result);
             setMigrationResult(result);
-            setSuccessMessage('Migration completed successfully! Check the migration results below.');
-
-            // Save the new Shannon wallet if provided in result
-            if (result.data?.result?.mappings && result.data.result.mappings.length > 0) {
-                const mapping = result.data.result.mappings[0];
-                if (mapping.shannon_address) {
-                    await storageService.set('shannon_wallet', {
-                        serialized: '', // Backend doesn't provide serialized wallet
-                        network: 'shannon',
-                        timestamp: Date.now(),
-                        parsed: { address: mapping.shannon_address }
-                    });
-                    console.log('💾 New Shannon wallet saved to localStorage');
-                }
-            }
-
-        } catch (error) {
-            console.error('❌ Migration error:', error);
-            setError(error instanceof Error ? error.message : 'Migration failed');
+            setSuccessMessage('Migration completed successfully!');
+        } catch (err: any) {
+            console.error('Migration error:', err);
+            setError(err.message || 'Migration failed');
         } finally {
             setIsLoading(false);
         }
     };
 
     const reset = () => {
-        setSelectedMorseWallet('');
+        setSelectedMorseWallets([]);
         setSelectedShannonWallet('');
         setError(null);
         setSuccessMessage(null);
@@ -506,7 +349,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-white">Wallet Migration</h2>
-                            <p className="text-gray-400 text-xs mt-0.5">Migrate your Morse wallet to Shannon network</p>
+                            <p className="text-gray-400 text-xs mt-0.5">Migrate your Morse wallets to Shannon network</p>
                         </div>
                     </div>
                     <button
@@ -535,27 +378,31 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
                             <div className="flex items-center space-x-2">
                                 <i className="fas fa-circle-check text-green-500"></i>
-                                <p className="font-medium text-green-400 text-sm">Your Morse account is ready.</p>
+                                <p className="font-medium text-green-400 text-sm">Your Morse accounts are ready.</p>
                             </div>
-                            {selectedMorseWallet && morseWallets.length > 0 && (
+                            {selectedMorseWallets.length > 0 && morseWallets.length > 0 && (
                                 <p className="text-amber-200/80 text-xs pl-6 mt-1">
-                                    It can be migrated with {
+                                    They can be migrated with {
                                         (() => {
                                             try {
                                                 // Obtener la dirección seleccionada
-                                                const selectedWallet = morseWallets.find(w => w.id === selectedMorseWallet);
-                                                if (!selectedWallet) return '0.00';
+                                                const selectedWallets = morseWallets.filter((w: WalletOption) => selectedMorseWallets.includes(w.id));
+                                                if (selectedWallets.length === 0) return '0.00';
 
                                                 // Forzar actualización del balance (esto es asíncrono, pero al menos inicia la actualización)
                                                 setTimeout(async () => {
-                                                    const balance = await walletService.getBalance(selectedWallet.address);
+                                                    const balances = await Promise.all(selectedWallets.map((w: WalletOption) => walletService.getBalance(w.address)));
                                                     // Actualizar el elemento DOM directamente con el balance actual
-                                                    const balanceElement = document.getElementById('morseBalanceDisplay');
-                                                    if (balanceElement && balance) {
-                                                        const balanceNum = parseFloat(balance);
-                                                        balanceElement.innerText = balanceNum.toLocaleString('en-US', {
-                                                            minimumFractionDigits: 2,
-                                                            maximumFractionDigits: 2
+                                                    const balanceElements = selectedWallets.map((w: WalletOption) => document.getElementById(`morseBalanceDisplay-${w.id}`));
+                                                    if (balanceElements && balances) {
+                                                        const balanceNums = balances.map(balance => parseFloat(balance));
+                                                        balanceElements.forEach((element, index) => {
+                                                            if (element) {
+                                                                element.innerText = balanceNums[index].toLocaleString('en-US', {
+                                                                    minimumFractionDigits: 2,
+                                                                    maximumFractionDigits: 2
+                                                                });
+                                                            }
                                                         });
                                                     }
                                                 }, 100);
@@ -575,7 +422,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                                         }
                                                     } catch (e) { }
                                                 }
-                                                return <span id="morseBalanceDisplay">{morseBalance}</span>;
+                                                return <span id={`morseBalanceDisplay-${selectedWallets[0].id}`}>{morseBalance}</span>;
                                             } catch (e) {
                                                 console.error("Error obteniendo balance:", e);
                                                 return '0.00';
@@ -631,124 +478,76 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
                     {!migrationResult && (
                         <div className="grid md:grid-cols-1 gap-4">
-                            {/* Morse Wallet Selection */}
+                            {/* Morse Wallet Cards (multi select) */}
                             <div className="bg-gradient-to-br from-orange-500/5 to-yellow-500/5 border border-orange-500/20 rounded-xl p-3">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Wallet className="w-4 h-4 text-orange-400" />
-                                    <h3 className="font-semibold text-orange-300 text-sm">Select Morse Wallet</h3>
+                                    <h3 className="font-semibold text-orange-300 text-sm">Select Morse Wallets</h3>
+                                    {morseWallets.length > 1 && (
+                                        <button
+                                            onClick={() => setSelectedMorseWallets(morseWallets.map(w => w.id))}
+                                            className="ml-auto text-xs text-orange-300 hover:text-orange-200 underline"
+                                        >Select all</button>
+                                    )}
                                 </div>
 
-                                {morseWallets.length > 0 ? (
-                                    <>
-                                        <select
-                                            value={selectedMorseWallet}
-                                            onChange={(e) => setSelectedMorseWallet(e.target.value)}
-                                            className="w-full p-2.5 bg-gray-800/60 border border-gray-600/50 rounded-lg text-white text-sm focus:border-orange-400 focus:ring-2 focus:ring-orange-400/20 focus:outline-none transition-all"
-                                            disabled={isLoading}
-                                        >
-                                            <option value="">Choose Morse wallet...</option>
-                                            {morseWallets.map((wallet) => (
-                                                <option key={wallet.id} value={wallet.id}>
-                                                    {wallet.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {selectedMorseWallet && (
-                                            <div className="mt-2 p-2 bg-orange-500/5 rounded-lg border border-orange-500/20">
-                                                <p className="text-xs text-orange-200/70 font-medium">Selected Address:</p>
-                                                <p className="text-orange-300 font-mono text-xs break-all">
-                                                    {morseWallets.find(w => w.id === selectedMorseWallet)?.address}
-                                                </p>
-                                            </div>
-                                        )}
-                                    </>
-                                ) : (
-                                    <div className="text-center space-y-2">
-                                        <p className="text-orange-400/60 text-xs">No Morse wallets found</p>
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={handleCreateMorseWallet}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-600/20 to-yellow-600/20 border border-orange-500/30 rounded-lg text-orange-300 text-xs hover:from-orange-600/30 hover:to-yellow-600/30 hover:border-orange-500/50 transition-all duration-200"
-                                            >
-                                                <Plus className="w-3 h-3" />
-                                                Create
-                                            </button>
-                                            <button
-                                                onClick={handleImportMorseWallet}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-orange-600/20 to-yellow-600/20 border border-orange-500/30 rounded-lg text-orange-300 text-xs hover:from-orange-600/30 hover:to-yellow-600/30 hover:border-orange-500/50 transition-all duration-200"
-                                            >
-                                                <Download className="w-3 h-3" />
-                                                Import
-                                            </button>
-                                        </div>
-                                    </div>
+                                {morseWallets.length === 0 && (
+                                    <p className="text-orange-400/60 text-xs">No Morse wallets found</p>
                                 )}
+
+                                <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
+                                    {morseWallets.map(wallet => {
+                                        const selected = selectedMorseWallets.includes(wallet.id);
+                                        return (
+                                            <button
+                                                key={wallet.id}
+                                                onClick={() => {
+                                                    setSelectedMorseWallets(prev => selected ? prev.filter(id => id !== wallet.id) : [...prev, wallet.id]);
+                                                }}
+                                                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left ${selected ? 'bg-orange-600/20 border-orange-500/50' : 'bg-gray-800/50 border-gray-600/30 hover:bg-gray-700/40'}`}
+                                                disabled={isLoading}
+                                            >
+                                                <span className="text-xs truncate mr-2">{wallet.address}</span>
+                                                {selected && <CheckCircle className="w-3 h-3 text-orange-300" />}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
-                            {/* Shannon Wallet Selection */}
+                            {/* Shannon Wallet Cards (single select) */}
                             <div className="bg-gradient-to-br from-blue-500/5 to-purple-500/5 border border-blue-500/20 rounded-xl p-3">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Wallet className="w-4 h-4 text-blue-400" />
                                     <h3 className="font-semibold text-blue-300 text-sm">Select Shannon Wallet</h3>
                                 </div>
 
-                                {shannonWallets.length > 0 ? (
-                                    <>
-                                        <select
-                                            value={selectedShannonWallet}
-                                            onChange={(e) => {
-                                                setSelectedShannonWallet(e.target.value);
-                                                // Reset verification status
-                                                setSuccessMessage(null);
-                                                setError(null);
+                                {shannonWallets.length === 0 && (
+                                    <p className="text-blue-400/60 text-xs">No Shannon wallets found</p>
+                                )}
 
-                                                // La verificación ocurrirá automáticamente por el useEffect
-                                            }}
-                                            className="w-full p-2.5 bg-gray-800/60 border border-gray-600/50 rounded-lg text-white text-sm focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20 focus:outline-none transition-all"
-                                            disabled={isLoading}
-                                        >
-                                            <option value="">Choose Shannon wallet...</option>
-                                            {shannonWallets.map((wallet) => (
-                                                <option key={wallet.id} value={wallet.id}>
-                                                    {wallet.name}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        {selectedShannonWallet && (
-                                            <div className="mt-2 p-2 bg-blue-500/5 rounded-lg border border-blue-500/20">
-                                                <p className="text-xs text-blue-200/70 font-medium">Selected Address:</p>
-                                                <p className="text-blue-300 font-mono text-xs break-all">
-                                                    {shannonWallets.find(w => w.id === selectedShannonWallet)?.address}
-                                                </p>
-                                            </div>
-                                        )}
-                                        <p className="text-blue-400/60 text-xs mt-2">
-                                            This wallet must have funds to pay migration fees
-                                        </p>
-                                    </>
-                                ) : (
-                                    <div className="text-center space-y-2">
-                                        <p className="text-blue-400/60 text-xs">No Shannon wallets found</p>
-                                        <div className="flex gap-2">
+                                <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
+                                    {shannonWallets.map(wallet => {
+                                        const selected = selectedShannonWallet === wallet.id;
+                                        return (
                                             <button
-                                                onClick={handleCreateShannonWallet}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-lg text-blue-300 text-xs hover:from-blue-600/30 hover:to-purple-600/30 hover:border-blue-500/50 transition-all duration-200"
+                                                key={wallet.id}
+                                                onClick={() => {
+                                                    setSelectedShannonWallet(wallet.id);
+                                                    setSuccessMessage(null);
+                                                    setError(null);
+                                                }}
+                                                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left ${selected ? 'bg-blue-600/20 border-blue-500/50' : 'bg-gray-800/50 border-gray-600/30 hover:bg-gray-700/40'}`}
+                                                disabled={isLoading}
                                             >
-                                                <Plus className="w-3 h-3" />
-                                                Create
+                                                <span className="text-xs truncate mr-2">{wallet.address}</span>
+                                                {selected && <CheckCircle className="w-3 h-3 text-blue-300" />}
                                             </button>
-                                            <button
-                                                onClick={handleImportShannonWallet}
-                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30 rounded-lg text-blue-300 text-xs hover:from-blue-600/30 hover:to-purple-600/30 hover:border-blue-500/50 transition-all duration-200"
-                                            >
-                                                <Download className="w-3 h-3" />
-                                                Import
-                                            </button>
-                                        </div>
-                                        <p className="text-blue-400/60 text-xs">
-                                            Shannon wallet must have funds to pay migration fees
-                                        </p>
-                                    </div>
+                                        );
+                                    })}
+                                </div>
+                                {selectedShannonWallet && (
+                                    <p className="text-blue-400/60 text-xs mt-2">This wallet must have funds to pay migration fees</p>
                                 )}
                             </div>
                         </div>
@@ -799,7 +598,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                         {!migrationResult && (
                             <button
                                 onClick={handleMigration}
-                                disabled={!selectedMorseWallet || !selectedShannonWallet || isLoading}
+                                disabled={selectedMorseWallets.length === 0 || !selectedShannonWallet || isLoading}
                                 className="flex-1 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-white rounded-lg transition-all duration-200 flex items-center justify-center gap-2 font-medium text-sm shadow-lg"
                             >
                                 {isLoading ? (

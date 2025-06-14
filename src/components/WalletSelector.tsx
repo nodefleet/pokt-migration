@@ -29,6 +29,8 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
     }>({ shannon: [], morse: [] });
     const [isOpen, setIsOpen] = useState(false);
     const [selectedMainnet, setSelectedMainnet] = useState<boolean>(true);
+    const [hasShannon, setHasShannon] = useState(false);
+    const [hasMorse, setHasMorse] = useState(false);
 
     // SOLO CARGAR DESDE STORAGE AL INICIO, UNA VEZ
     useEffect(() => {
@@ -73,28 +75,65 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
     }, [isMainnet, onMainnetChange]);
 
     const loadAvailableWallets = async () => {
-        try {
-            const shannonWallet = await storageService.get<StoredWallet>('shannon_wallet');
-            const morseWallet = await storageService.get<StoredWallet>('morse_wallet');
+        // --- SHANNON wallets ---
+        const shannonArr = (await storageService.get<any[]>('shannon_wallets')) || [];
+        const rawShannonWallets = Array.isArray(shannonArr) ? shannonArr : [];
 
-            const shannon = shannonWallet ? [shannonWallet] : [];
-            const morse = morseWallet ? [morseWallet] : [];
-
-            setAvailableWallets({ shannon, morse });
-        } catch (error) {
-            console.error('Error loading wallets:', error);
+        // Add legacy single shannon_wallet
+        const legacyShannon = await storageService.get<any>('shannon_wallet');
+        if (legacyShannon && !rawShannonWallets.some(w => w.id === 'shannon_legacy')) {
+            rawShannonWallets.push({ ...legacyShannon, id: 'shannon_legacy' });
         }
+
+        // Deduplicate by parsed.address (first occurrence wins)
+        const shannonSeen = new Set<string>();
+        const shannonWallets = rawShannonWallets.filter((w: any) => {
+            const addr: string | undefined = w.parsed?.address;
+            if (addr) {
+                if (shannonSeen.has(addr)) return false;
+                shannonSeen.add(addr);
+            }
+            return true;
+        });
+
+        // --- MORSE wallets ---
+        const morseArr = (await storageService.get<any[]>('morse_wallets')) || [];
+        const rawMorseWallets = Array.isArray(morseArr) ? morseArr : [];
+
+        // Add legacy single morse_wallet
+        const legacyMorse = await storageService.get<any>('morse_wallet');
+        if (legacyMorse && !rawMorseWallets.some(w => w.id === 'morse_legacy')) {
+            rawMorseWallets.push({ ...legacyMorse, id: 'morse_legacy' });
+        }
+
+        // Deduplicate by parsed.addr or parsed.address
+        const morseSeen = new Set<string>();
+        const morseWallets = rawMorseWallets.filter((w: any) => {
+            const addr: string | undefined = w.parsed?.addr || w.parsed?.address;
+            if (addr) {
+                if (morseSeen.has(addr)) return false;
+                morseSeen.add(addr);
+            }
+            return true;
+        });
+
+        setAvailableWallets({ shannon: shannonWallets, morse: morseWallets });
+        setHasShannon(shannonWallets.length > 0);
+        setHasMorse(morseWallets.length > 0);
+    };
+
+    // Helper to safely obtain an address from StoredWallet (supports Morse addr field)
+    const getWalletAddress = (wallet: StoredWallet): string | undefined => {
+        return wallet.parsed?.address || wallet.parsed?.addr;
     };
 
     const handleWalletSelect = (wallet: StoredWallet) => {
-        if (wallet.parsed?.address) {
-            console.log(`🎯 Wallet selected: ${wallet.parsed.address} - Network: ${wallet.network} - Mainnet: ${selectedMainnet === true ? 'mainnet' : 'testnet'}`);
+        const addr = getWalletAddress(wallet);
+        if (addr) {
+            console.log(`🎯 Wallet selected: ${addr} - Network: ${wallet.network} - Mainnet: ${selectedMainnet === true ? 'mainnet' : 'testnet'}`);
 
-            // Pasar tanto la dirección como la configuración de red seleccionada
-            onWalletChange(wallet.parsed.address, wallet.network as NetworkType, selectedMainnet);
-
-            // Aquí podríamos agregar lógica adicional para forzar la configuración de mainnet/testnet
-            // basada en el select si es necesario
+            // Pass both the address and the selected network/mainnet flag
+            onWalletChange(addr, (wallet.network || currentNetwork) as NetworkType, selectedMainnet);
 
             setIsOpen(false);
         }
@@ -105,8 +144,6 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
     };
 
     // Determinar qué redes están disponibles
-    const hasShannon = availableWallets.shannon.length > 0;
-    const hasMorse = availableWallets.morse.length > 0;
     const availableNetworks = [];
     if (hasShannon) availableNetworks.push('shannon');
     if (hasMorse) availableNetworks.push('morse');
@@ -261,7 +298,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                             onClick={() => handleWalletSelect(wallet)}
                                         >
                                             <div className="flex items-center justify-between">
-                                                <span className="font-mono">{wallet.parsed?.address ? truncateAddress(wallet.parsed.address) : 'Invalid Address'}</span>
+                                                <span className="font-mono">{getWalletAddress(wallet) ? truncateAddress(getWalletAddress(wallet)!) : 'Invalid Address'}</span>
                                                 <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 text-blue-300 border border-blue-800/50">Shannon</span>
                                             </div>
                                         </button>
@@ -283,7 +320,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                             onClick={() => handleWalletSelect(wallet)}
                                         >
                                             <div className="flex items-center justify-between">
-                                                <span className="font-mono">{wallet.parsed?.address ? truncateAddress(wallet.parsed.address) : 'Invalid Address'}</span>
+                                                <span className="font-mono">{getWalletAddress(wallet) ? truncateAddress(getWalletAddress(wallet)!) : 'Invalid Address'}</span>
                                                 <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-300 border border-yellow-800/50">Morse</span>
                                             </div>
                                         </button>
