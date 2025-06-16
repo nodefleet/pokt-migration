@@ -499,10 +499,21 @@ export class MorseWalletService {
                     const jsonData = JSON.parse(code.trim());
 
                     // Si tiene los campos de un JSON de Morse, procesarlo como tal
-                    if (jsonData.addr && jsonData.name && jsonData.priv) {
-                        console.log('🔄 MORSE Import - Valid JSON format with addr/name/priv fields');
-                        const morseData = this.parseMorseJsonWallet(code);
-                        walletInfo = await this.createMorseWalletFromJson(morseData, password);
+                    if (jsonData.addr && jsonData.priv) {
+                        console.log('🔄 MORSE Import - Valid JSON format with addr/priv fields');
+                        console.log('🎯 MORSE Import - Using exact address from JSON:', jsonData.addr);
+
+                        // Usar la dirección exacta del JSON sin derivarla
+                        walletInfo = {
+                            address: jsonData.addr,
+                            serialized: JSON.stringify({
+                                type: "morse-json-wallet",
+                                originalAddr: jsonData.addr,
+                                originalName: jsonData.name || `wallet-${jsonData.addr.substring(0, 8)}`,
+                                privateKeyHex: jsonData.priv,
+                                network: "morse"
+                            })
+                        };
                     } else {
                         // Si es JSON pero no tiene el formato específico de Morse, intentar como hex
                         console.log('🔄 MORSE Import - JSON does not have Morse format, treating as regular input');
@@ -527,7 +538,7 @@ export class MorseWalletService {
 
             // Guardar con la estructura que espera main.tsx
             await storageService.set('morse_wallet', {
-                serialized: code, // El código original importado
+                serialized: code, // Guardar el código original importado (JSON completo o hex)
                 network: 'morse',
                 timestamp: Date.now(),
                 parsed: { address: walletInfo.address } // La dirección original de Morse
@@ -544,7 +555,14 @@ export class MorseWalletService {
             }
 
             console.log(`✅ MORSE wallet imported successfully: ${walletInfo.address}`);
-            console.log(`📦 MORSE wallet type: ${JSON.parse(walletInfo.serialized).type}`);
+            if (walletInfo.serialized) {
+                try {
+                    const walletData = JSON.parse(walletInfo.serialized);
+                    console.log(`📦 MORSE wallet type: ${walletData.type || 'unknown'}`);
+                } catch (e) {
+                    console.log('📦 MORSE wallet serialized data is not valid JSON');
+                }
+            }
 
             return walletInfo;
 
