@@ -9,5 +9,5 @@ morsedoc/
 shannondoc/
 .env
 .env.example
-migration-backend/
 localnet/
+node_modules/*

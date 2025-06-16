@@ -47,6 +47,42 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
     const migrationService = new MigrationService();
 
+    // Función para extraer el mensaje de error relevante de un error completo
+    const extractRelevantErrorMessage = (errorText: string): string => {
+        if (!errorText) return "Unknown error occurred during migration";
+
+        // Buscar mensajes específicos y devolver mensajes amigables
+        if (errorText.includes("Zero claimable Morse accounts found")) {
+            return "Zero claimable Morse accounts found in the snapshot. Your wallet may not be eligible for migration.";
+        }
+
+        if (errorText.includes("connection refused") || errorText.includes("ECONNREFUSED")) {
+            return "Cannot connect to migration service. Please try again later.";
+        }
+
+        if (errorText.includes("Usage:") && errorText.includes("claim-accounts")) {
+            return "Migration command failed. Your Morse wallet may not be in the correct format.";
+        }
+
+        // Extraer la última línea significativa, que suele contener el error real
+        const lines = errorText.split('\n').filter((line: string) =>
+            line.trim() !== '' &&
+            !line.includes('--') &&
+            !line.includes('connection established') &&
+            !line.includes('Example') &&
+            !line.includes('Usage:') &&
+            !line.includes('Flags:') &&
+            !line.includes('Global Flags:')
+        );
+
+        if (lines.length > 0) {
+            // Tomar la última línea que suele tener el mensaje real
+            return lines[lines.length - 1].trim();
+        }
+
+        return "Migration failed. Please try again or contact support.";
+    };
+
     useEffect(() => {
         if (isOpen) {
             loadWallets();
@@ -291,11 +327,55 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
             const result = await response.json();
             console.log('Migration result:', result);
+
+            // Verificar si hay un error en el resultado
+            if (result.result && result.result.success === false) {
+                // Extraer mensaje de error útil
+                let errorMessage = "Migration failed";
+
+                if (result.result.error) {
+                    // Buscar el mensaje de error real, ignorando la salida del comando
+                    const errorText = result.result.error;
+
+                    if (errorText.includes("Zero claimable Morse accounts found")) {
+                        errorMessage = "Zero claimable Morse accounts found in the snapshot. Your wallet may not be eligible for migration.";
+                    } else if (errorText.includes("connection refused") || errorText.includes("ECONNREFUSED")) {
+                        errorMessage = "Cannot connect to migration service. Please try again later.";
+                    } else if (errorText.includes("Usage:") && errorText.includes("claim-accounts")) {
+                        errorMessage = "Migration command failed. Your Morse wallet may not be in the correct format.";
+                    } else {
+                        // Extraer la última línea significativa del error
+                        const lines = errorText.split('\n').filter((line: string) => line.trim() !== '');
+                        if (lines.length > 0) {
+                            errorMessage = lines[lines.length - 1].trim();
+                        }
+                    }
+                }
+
+                setError(errorMessage);
+                setMigrationResult(result);
+                return;
+            }
+
             setMigrationResult(result);
             setSuccessMessage('Migration completed successfully!');
         } catch (err: any) {
             console.error('Migration error:', err);
-            setError(err.message || 'Migration failed');
+
+            // Mejorar mensaje de error
+            let errorMessage = err.message || 'Migration failed';
+
+            // Detectar errores comunes y mostrar mensajes más claros
+            if (typeof errorMessage === 'string') {
+                if (errorMessage.includes('Zero claimable Morse accounts')) {
+                    // Mostrar el mensaje exacto sin traducir
+                    errorMessage = 'Zero claimable Morse accounts found in the snapshot. Check the logs and the input file before trying again.';
+                } else if (errorMessage.includes('connection refused') || errorMessage.includes('ECONNREFUSED')) {
+                    errorMessage = 'Cannot connect to migration service. Please try again later.';
+                }
+            }
+
+            setError(errorMessage);
         } finally {
             setIsLoading(false);
         }
@@ -555,13 +635,13 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
                     {/* Migration Result - condensado */}
                     {migrationResult && (
-                        <div className={`bg-gradient-to-br ${migrationResult.data?.result?.success !== false
+                        <div className={`bg-gradient-to-br ${migrationResult.data?.result?.success !== false && migrationResult.result?.success !== false
                             ? 'from-green-500/5 to-emerald-500/5 border-green-500/20'
                             : 'from-red-500/5 to-red-600/5 border-red-500/20'
                             } border rounded-xl p-3`}>
-                            <h3 className={`text-base font-semibold mb-3 flex items-center gap-2 ${migrationResult.data?.result?.success !== false ? 'text-green-300' : 'text-red-300'
+                            <h3 className={`text-base font-semibold mb-3 flex items-center gap-2 ${migrationResult.data?.result?.success !== false && migrationResult.result?.success !== false ? 'text-green-300' : 'text-red-300'
                                 }`}>
-                                {migrationResult.data?.result?.success !== false ? (
+                                {migrationResult.data?.result?.success !== false && migrationResult.result?.success !== false ? (
                                     <CheckCircle className="w-4 h-4" />
                                 ) : (
                                     <AlertCircle className="w-4 h-4" />
@@ -572,14 +652,37 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                 <div className="grid gap-3">
                                     <div className="p-3 bg-gray-800/40 rounded-lg border border-gray-700/50">
                                         <p className="text-xs text-gray-400 mb-1">Status</p>
-                                        <p className={`font-medium text-sm ${migrationResult.data?.result?.success !== false ? 'text-green-400' : 'text-red-400'
+                                        <p className={`font-medium text-sm ${migrationResult.data?.result?.success !== false && migrationResult.result?.success !== false ? 'text-green-400' : 'text-red-400'
                                             }`}>
-                                            {migrationResult.data?.result?.success !== false ? 'Successful' : 'Failed'}
+                                            {migrationResult.data?.result?.success !== false && migrationResult.result?.success !== false ? 'Successful' : 'Failed'}
                                         </p>
                                     </div>
 
-                                    {/* Otros campos del resultado de migración condensados */}
-                                    {/* ... rest of the migration result UI with smaller text and padding ... */}
+                                    {/* Mostrar mensaje de error específico siempre que haya un error */}
+                                    {(error || migrationResult.result?.error || migrationResult.data?.result?.error) && (
+                                        <div className="p-3 bg-red-900/20 rounded-lg border border-red-700/50">
+                                            <p className="text-xs text-gray-400 mb-1">Error Details</p>
+                                            <p className="font-medium text-sm text-red-400">
+                                                {typeof error === 'string' ? extractRelevantErrorMessage(error) :
+                                                    extractRelevantErrorMessage(
+                                                        (typeof migrationResult.result?.error === 'string' ? migrationResult.result?.error : '') ||
+                                                        (typeof migrationResult.data?.result?.error === 'string' ? migrationResult.data?.result?.error : '') ||
+                                                        "Unknown error occurred during migration"
+                                                    )}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Si hay mappings, mostrarlos */}
+                                    {(migrationResult.data?.result?.mappings || migrationResult.result?.mappings) &&
+                                        (migrationResult.data?.result?.mappings?.length > 0 || migrationResult.result?.mappings?.length > 0) && (
+                                            <div className="p-3 bg-gray-800/40 rounded-lg border border-gray-700/50">
+                                                <p className="text-xs text-gray-400 mb-1">Accounts Migrated</p>
+                                                <p className="font-medium text-sm text-green-400">
+                                                    {migrationResult.data?.result?.mappings?.length || migrationResult.result?.mappings?.length || 0}
+                                                </p>
+                                            </div>
+                                        )}
                                 </div>
                             </div>
                         </div>
