@@ -18,6 +18,63 @@ interface StoredWallet {
     parsed: any;
 }
 
+// Función para obtener transacciones directamente desde la API RPC de Shannon
+const fetchShannonTransactions = async (address: string): Promise<any[]> => {
+    try {
+        console.log('🔍 Fetching Shannon transactions directly from RPC API...');
+
+        // URL de la API RPC de Shannon
+        const rpcUrl = 'https://shannon-grove-rpc.mainnet.poktroll.com/';
+
+        // Consulta para transacciones enviadas
+        const sendQuery = {
+            jsonrpc: '2.0',
+            id: Math.floor(Math.random() * 1000000000),
+            method: 'tx_search',
+            params: [`message.sender='${address}'`, true, '1', '100', 'desc']
+        };
+
+        // Consulta para transacciones recibidas
+        const receiveQuery = {
+            jsonrpc: '2.0',
+            id: Math.floor(Math.random() * 1000000000),
+            method: 'tx_search',
+            params: [`transfer.recipient='${address}'`, true, '1', '100', 'desc']
+        };
+
+        // Realizar ambas consultas en paralelo
+        const [sendResponse, receiveResponse] = await Promise.all([
+            fetch(rpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(sendQuery)
+            }),
+            fetch(rpcUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(receiveQuery)
+            })
+        ]);
+
+        // Procesar las respuestas
+        const sendData = await sendResponse.json();
+        const receiveData = await receiveResponse.json();
+
+        // Extraer las transacciones
+        const sentTxs = sendData.result?.txs || [];
+        const receivedTxs = receiveData.result?.txs || [];
+
+        // Combinar todas las transacciones
+        const allTxs = [...sentTxs, ...receivedTxs];
+
+        console.log(`✅ Found ${allTxs.length} Shannon transactions directly from RPC`);
+        return allTxs;
+    } catch (error) {
+        console.error('❌ Error fetching Shannon transactions directly:', error);
+        return [];
+    }
+};
+
 const WalletDashboard: React.FC<WalletDashboardProps> = ({
     walletAddress,
     balance,
@@ -66,8 +123,34 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             // Intentar obtener transacciones solo si no estamos en modo offline
             if (!isOffline) {
-                const fetchedTransactions = await walletManager.getTransactions(walletAddress);
-                setTransactionsList(fetchedTransactions);
+                try {
+                    // Primero intentar con el método normal
+                    const fetchedTransactions = await walletManager.getTransactions(walletAddress);
+
+                    // Si no hay transacciones y estamos en Shannon, intentar directamente con la API RPC
+                    if (fetchedTransactions.length === 0 && network === 'shannon') {
+                        console.log('No se encontraron transacciones con el método normal, intentando directamente con RPC...');
+                        const directTransactions = await fetchShannonTransactions(walletAddress);
+                        if (directTransactions.length > 0) {
+                            setTransactionsList(directTransactions);
+                        } else {
+                            setTransactionsList(fetchedTransactions);
+                        }
+                    } else {
+                        setTransactionsList(fetchedTransactions);
+                    }
+                } catch (txError) {
+                    console.error('Error obteniendo transacciones con el método normal:', txError);
+
+                    // Si hay un error y estamos en Shannon, intentar directamente con la API RPC
+                    if (network === 'shannon') {
+                        console.log('Intentando obtener transacciones directamente con RPC debido a error...');
+                        const directTransactions = await fetchShannonTransactions(walletAddress);
+                        setTransactionsList(directTransactions);
+                    } else {
+                        setTransactionsList([]);
+                    }
+                }
             } else {
                 setTransactionsList([]);
             }
@@ -77,7 +160,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         } finally {
             setLoading(false);
         }
-    }, [walletManager, walletAddress]);
+    }, [walletManager, walletAddress, network]);
 
     useEffect(() => {
         // Solo intentar obtener datos si tenemos una dirección válida
@@ -368,6 +451,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                 walletAddress={walletAddress}
                                 isLoading={loading}
                                 onRefresh={fetchBalanceAndTransactions}
+                                networkType={network}
                             />
                         </motion.section>
 

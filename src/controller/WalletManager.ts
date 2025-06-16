@@ -537,13 +537,23 @@ export class WalletManager {
 
                 // Determinar status basado en result_code y tipo
                 let status: 'pending' | 'confirmed' | 'failed';
-                if (tx.result_code === 0) {
+
+                // Considerar todas las transacciones con valor positivo como confirmadas
+                if (parseFloat(amountInPokt) > 0) {
+                    status = 'confirmed';
+                } else if (tx.result_code === 0) {
                     status = 'confirmed';
                 } else if (tx.result_code === 110) {
                     // Código 110 típicamente indica transacción fallida
                     status = 'failed';
                 } else {
                     status = 'failed';
+                }
+
+                // Si es una transacción de migración, siempre marcarla como confirmada
+                if (tx.type === 'migration' || tx.memo?.includes('migration') || tx.memo?.includes('claim')) {
+                    status = 'confirmed';
+                    displayType = 'recv';
                 }
 
                 return {
