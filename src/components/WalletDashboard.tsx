@@ -101,9 +101,13 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
     const fetchBalanceAndTransactions = useCallback(async () => {
         try {
-            if (transactionsList.length > 0) {
-                setLoading(true);
+            if (!walletAddress) {
+                console.log('No wallet address provided, skipping balance fetch');
+                return;
             }
+
+            setLoading(true);
+            console.log(`🔄 Fetching balance and transactions for ${walletAddress} on ${network} (mainnet: ${isMainnet})`);
 
             // Verificar si walletManager está definido antes de usarlo
             if (!walletManager) {
@@ -119,6 +123,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             // Obtener balance aunque estemos en modo offline (devolverá 0)
             const fetchedBalance = await walletManager.getBalance(walletAddress);
+            console.log(`💰 Fetched balance for ${walletAddress}: ${fetchedBalance}`);
             setFormattedBalanceValue(formatBalance(fetchedBalance));
 
             // Intentar obtener transacciones solo si no estamos en modo offline
@@ -160,11 +165,20 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         } finally {
             setLoading(false);
         }
-    }, [walletManager, walletAddress, network]);
+    }, [walletManager, walletAddress, network, isMainnet]);
 
+    // Actualizar cuando cambian las props
+    useEffect(() => {
+        // Actualizar el balance formateado cuando cambia la prop balance
+        setFormattedBalanceValue(formatBalance(balance));
+        console.log('⚡ WalletDashboard: Balance prop updated:', balance);
+    }, [balance]);
+
+    // Efecto para obtener balance y transacciones
     useEffect(() => {
         // Solo intentar obtener datos si tenemos una dirección válida
         if (walletAddress) {
+            console.log(`⚡ WalletDashboard: Wallet/network changed - fetching data for ${walletAddress} (${network})`);
             fetchBalanceAndTransactions();
         }
     }, [walletManager, walletAddress, network, isMainnet, fetchBalanceAndTransactions]);
@@ -196,13 +210,25 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             fetchBalanceAndTransactions();
         };
 
+        const handleWalletDataUpdate = (event: CustomEvent) => {
+            const { address, balance } = event.detail;
+            console.log(`💰 WalletDashboard received wallet_data_updated event for ${address} with balance ${balance}`);
+
+            // Solo actualizar si es para nuestra wallet actual
+            if (address === walletAddress) {
+                setFormattedBalanceValue(formatBalance(balance));
+            }
+        };
+
         // Escuchar eventos customizados de storage
         window.addEventListener('storageUpdate', handleStorageUpdate);
+        window.addEventListener('wallet_data_updated', handleWalletDataUpdate as EventListener);
 
         return () => {
             window.removeEventListener('storageUpdate', handleStorageUpdate);
+            window.removeEventListener('wallet_data_updated', handleWalletDataUpdate as EventListener);
         };
-    }, [fetchBalanceAndTransactions]);
+    }, [fetchBalanceAndTransactions, walletAddress]);
 
     // Función para intentar reconectar manualmente
     const handleReconnect = async () => {

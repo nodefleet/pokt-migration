@@ -7,8 +7,6 @@ import MainContent from './components/MainContent';
 import Footer from './components/Footer';
 import IndividualImport from './components/IndividualImport';
 import WalletDashboard from './components/WalletDashboard';
-import BulkImport from './components/BulkImport';
-import BulkImportTable from './components/BulkImportTable';
 import NetworkError from './components/NetworkError';
 import { AppState, StoredWallet } from './types';
 import { WalletService } from './controller/WalletService';
@@ -37,17 +35,52 @@ const App: React.FC = () => {
         try {
             console.log('📊 Loading wallet data for:', address);
 
+            if (!address) {
+                console.error('❌ No wallet address provided to loadWalletData');
+                return;
+            }
+
+            // Resetear balance a 0 antes de cargar para evitar mostrar el balance anterior
+            setBalance('0');
+
+            // Verificar que el walletService esté inicializado
+            if (!walletService.getWalletManager()) {
+                console.log('⚠️ WalletManager no inicializado, inicializando...');
+                await walletService.init();
+            }
+
             // Cargar balance
             const walletInfo = await walletService.getCurrentWalletInfo();
             if (walletInfo) {
+                console.log(`💰 Balance loaded for ${address}: ${walletInfo.balance}`);
                 setBalance(walletInfo.balance);
-                console.log('✅ Balance loaded:', walletInfo.balance);
+            } else {
+                console.warn(`⚠️ No wallet info returned for address ${address}`);
+                // Intentar obtener balance directamente
+                const directBalance = await walletService.getBalance(address);
+                if (directBalance) {
+                    console.log(`💰 Direct balance loaded: ${directBalance}`);
+                    setBalance(directBalance);
+                } else {
+                    console.warn('⚠️ No se pudo obtener balance directo');
+                    setBalance('0');
+                }
             }
 
             // Cargar transacciones
-            const walletTransactions = await walletService.getTransactions(address);
-            setTransactions(walletTransactions);
-            console.log('✅ Transactions loaded:', walletTransactions.length);
+            try {
+                const walletTransactions = await walletService.getTransactions(address);
+                setTransactions(walletTransactions);
+                console.log('✅ Transactions loaded:', walletTransactions.length);
+            } catch (txError) {
+                console.error('❌ Error loading transactions:', txError);
+                setTransactions([]);
+            }
+
+            // Disparar evento de actualización para que otros componentes se actualicen
+            window.dispatchEvent(new CustomEvent('wallet_data_updated', {
+                detail: { address, balance: walletInfo?.balance || '0' }
+            }));
 
         } catch (error) {
             console.error('❌ Error loading wallet data:', error);
@@ -401,30 +434,20 @@ const App: React.FC = () => {
                             }
                         }
 
-                        // CONFIGURAR WALLETSERVICE con la red seleccionada DIRECTAMENTE
-                        const finalIsMainnet = isMainnetSelected !== undefined ? isMainnetSelected : false; // DEFAULT TESTNET
+                        // Actualizar walletManager con la nueva configuración
+                        await walletService.switchNetwork(network, isMainnetSelected === true);
 
-                        if (network === 'morse') {
-                            console.log('🟡 MORSE wallet selected - configuring WalletService in MORSE mode');
-                            await walletService.switchNetwork('morse', false);
-                        } else {
-                            console.log(`🔵 SHANNON wallet selected - configuring WalletService in SHANNON mode (${finalIsMainnet === true ? 'mainnet' : 'testnet'})`);
-                            await walletService.switchNetwork('shannon', finalIsMainnet);
-                        }
-
-                        // Limpiar datos anteriores inmediatamente
-                        setTransactions([]);
-
-                        // No resetear inmediatamente a 0, mantener balance anterior mientras carga
-                        setTransactions([]);
-
-                        // Solo limpiar transacciones, mantener balance anterior mientras carga
-                        setTransactions([]);
-
-                        // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS
+                        // Importante: Cargar los datos de la nueva wallet seleccionada
+                        console.log('🔄 Loading wallet data for new selected wallet:', address);
                         await loadWalletData(address);
 
-                        console.log(`✅ DIRECT wallet change completed: ${address} (${network}) - Mainnet: ${finalIsMainnet}`);
+                        // Guardar la dirección seleccionada en localStorage
+                        await storageService.set('walletAddress', address);
+
+                        // Navegar al dashboard si no estamos ya ahí
+                        if (window.location.pathname !== '/wallet') {
+                            navigate('/wallet');
+                        }
                     } catch (error) {
                         console.error('Error changing wallet:', error);
                         setNetworkError(error instanceof Error ? error.message : 'Error changing wallet');
@@ -615,19 +638,6 @@ const App: React.FC = () => {
                         />
                     } />
 
-                    <Route path="/import/bulk" element={
-                        <BulkImport
-                            onReturn={() => navigate('/')}
-                            onBulkImport={() => navigate('/import/bulk/table')}
-                        />
-                    } />
-
-                    <Route path="/import/bulk/table" element={
-                        <BulkImportTable
-                            onReturn={() => navigate('/')}
-                            onWalletImport={handleWalletImport}
-                        />
-                    } />
                 </Routes>
             </main>
             <Footer />

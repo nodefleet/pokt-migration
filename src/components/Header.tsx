@@ -56,35 +56,7 @@ const Header: React.FC<ExtendedHeaderProps> = ({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
         >
-            {/* Network Badge */}
-            <AnimatePresence>
-                {showNetworkBadge && (
-                    <motion.div
-                        className="absolute w-full text-center py-1 bg-gradient-to-r from-transparent via-indigo-700/80 to-transparent text-white text-sm font-medium z-tooltip"
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20 }}
-                    >
-                        <div className="flex items-center justify-center space-x-2">
-                            <span className={`h-2 w-2 rounded-full ${currentNetwork === 'shannon'
-                                ? 'bg-blue-400 shadow-sm shadow-blue-400/50'
-                                : 'bg-yellow-400 shadow-sm shadow-yellow-400/50'}`}>
-                            </span>
-                            <span>
-                                {currentNetwork === 'shannon'
-                                    ? `Shannon ${isMainnet ? 'Mainnet' : 'Testnet'}`
-                                    : 'Morse Network (Migration in Progress)'}
-                            </span>
-                            <button
-                                className="text-gray-300 hover:text-white transition-colors duration-200"
-                                onClick={() => setShowNetworkBadge(false)}
-                            >
-                                <i className="fas fa-times"></i>
-                            </button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+
 
             <motion.header
                 className="backdrop-blur-md bg-gradient-to-r from-blue-900/80 via-indigo-900/80 to-purple-900/80 text-white shadow-xl border-b border-indigo-500/20 glass-effect z-header"

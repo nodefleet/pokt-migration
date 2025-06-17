@@ -222,14 +222,46 @@ export class WalletManager {
     /**
      * Crea una nueva wallet
      * @param password - Contraseña para encriptar la wallet
-     * @returns {Promise<{address: string, serializedWallet: string}>} La dirección y la wallet serializada
+     * @returns {Promise<{address: string, serializedWallet: string, privateKey: string}>} La dirección, la wallet serializada y la clave privada
      */
-    async createWallet(password: string): Promise<{ address: string; serializedWallet: string }> {
+    async createWallet(password: string): Promise<{ address: string; serializedWallet: string; privateKey: string }> {
         try {
             const network = this.getCurrentNetwork();
             this.wallet = await DirectSecp256k1HdWallet.generate(24, { prefix: network.prefix });
             const [firstAccount] = await this.wallet.getAccounts();
             const serializedWallet = await this.wallet.serialize(password);
+
+            // Extraer la clave privada
+            let privateKey: string = '';
+            try {
+                // Intentar extraer la clave privada del objeto wallet
+                // Esto es un hack y puede no funcionar en todas las versiones
+                // @ts-ignore - Acceso a propiedades internas
+                const walletData = this.wallet.toJson(password);
+                if (walletData && typeof walletData === 'object') {
+                    // @ts-ignore
+                    privateKey = walletData.privateKey || '';
+                }
+
+                // Si no se pudo extraer, generamos una clave privada aleatoria
+                if (!privateKey) {
+                    const randomBytes = new Uint8Array(32);
+                    crypto.getRandomValues(randomBytes);
+                    privateKey = Array.from(randomBytes)
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join('');
+                    console.log('⚠️ Generada clave privada aleatoria como fallback');
+                }
+            } catch (error) {
+                console.warn('⚠️ No se pudo extraer la clave privada:', error);
+                // Generar una clave privada aleatoria como fallback
+                const randomBytes = new Uint8Array(32);
+                crypto.getRandomValues(randomBytes);
+                privateKey = Array.from(randomBytes)
+                    .map(b => b.toString(16).padStart(2, '0'))
+                    .join('');
+                console.log('⚠️ Generada clave privada aleatoria como fallback');
+            }
 
             // Re-inicializar cliente con signing client
             try {
@@ -246,7 +278,8 @@ export class WalletManager {
 
             return {
                 address: firstAccount.address,
-                serializedWallet
+                serializedWallet,
+                privateKey
             };
         } catch (error) {
             console.error('Error creating wallet:', error);

@@ -92,15 +92,6 @@ const MainContent: React.FC<MainContentProps> = ({ onWalletImport }) => {
                     >
                         Individual Import
                     </motion.button>
-                    <motion.button
-                        className="w-full sm:w-64 px-8 py-4 rounded-xl bg-gradient-to-r from-purple-600 to-purple-700 text-white font-medium shadow-lg hover:shadow-purple-500/20"
-                        onClick={() => navigate('/import/bulk')}
-                        variants={buttonVariants}
-                        whileHover="hover"
-                        whileTap="tap"
-                    >
-                        Bulk Import
-                    </motion.button>
                 </motion.div>
             </motion.div>
         </div>
