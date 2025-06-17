@@ -6,7 +6,15 @@ export default defineConfig({
     plugins: [react()],
     build: {
         outDir: 'dist',
-        emptyOutDir: true
+        emptyOutDir: true,
+        rollupOptions: {
+            output: {
+                manualChunks: {
+                    'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+                    'cosmjs-vendor': ['@cosmjs/proto-signing', '@cosmjs/stargate']
+                }
+            }
+        }
     },
     server: {
         port: 5173,
@@ -50,5 +58,6 @@ export default defineConfig({
     define: {
         'process.env': {},
         global: 'globalThis',
-    }
+    },
+    base: '/'
 }); 
