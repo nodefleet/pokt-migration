@@ -342,53 +342,52 @@ export class WalletManager {
      */
     async getBalance(address: string): Promise<string> {
         try {
-            // DETECCIÓN AUTOMÁTICA por formato de dirección
-            if (this.isMorseAddress(address)) {
-                console.log(`🟡 Auto-detected Morse address format, using Morse balance function`);
-                return await this.getMorseBalance(address);
-            }
-
-            // SHANNON: Usar ShannonWallet que maneja mainnet/testnet correctamente
-            if (this.networkType === 'shannon' && this.shannonWallet) {
-                return await this.shannonWallet.getBalance(address);
-            }
-
-            // MORSE: Usar función específica de Morse (independiente del cliente genérico)
-            if (this.networkType === 'morse') {
-                console.log(`🟡 Using dedicated Morse balance function for ${this.networkMode}`);
-                return await this.getMorseBalance(address);
-            }
-
-            // FALLBACK: Cliente genérico solo para casos especiales
             if (this.isForcedOffline) {
-                console.warn("Operating in offline mode. Balance not available.");
-                return '0';
+                console.warn("Cannot get balance in offline mode");
+                return "0";
             }
 
-            if (!this.client) {
-                const reconnected = await this.tryReconnect();
-                if (!reconnected) {
-                    console.warn("Could not connect to network to get balance. Using '0' as default value.");
-                    return '0';
+            // Determinar la URL base según el entorno
+            const isProduction = import.meta.env.PROD;
+            const baseUrl = isProduction
+                ? 'https://migration.shannon.nodefleet.net'
+                : '';
+
+            // Determinar la URL según el tipo de red
+            let url: string;
+            if (this.networkType === 'morse') {
+                url = `${baseUrl}/api/tango/v1/query/balance`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        address
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Error getting balance: ${response.status} ${response.statusText}`);
                 }
+
+                const data = await response.json();
+                return data.balance || "0";
+            } else {
+                // Shannon
+                url = `${baseUrl}/api/poktradar/address/balance/${address}`;
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`Error getting balance: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                return data.balance || "0";
             }
-
-            if (!address || address.trim() === '') {
-                console.error('Invalid wallet address');
-                return '0';
-            }
-
-            const result = await this.client?.getBalance(address, "upokt");
-
-            if (!result || typeof result.amount !== 'string') {
-                console.error('Invalid balance response:', result);
-                return '0';
-            }
-
-            return result.amount;
         } catch (error) {
             console.error('Error getting balance:', error);
-            return '0';
+            return "0";
         }
     }
 
@@ -407,54 +406,44 @@ export class WalletManager {
      * @returns {Promise<Transaction[]>} Lista de transacciones
      */
     async getTransactions(address: string): Promise<Transaction[]> {
-        console.log(`🔍 Getting transactions for ${this.networkType} ${this.networkMode} - Address: ${address}`);
-
         try {
-            // SHANNON: Usar ShannonWallet que ya maneja mainnet/testnet correctamente
-            if (this.networkType === 'shannon' && this.shannonWallet) {
-                console.log(`🔵 Using Shannon wallet for transactions (${this.networkMode})`);
-                return await this.shannonWallet.getTransactions(address);
-            }
-
-            // MORSE: Usar función específica de Morse (independiente del cliente genérico)
-            if (this.networkType === 'morse') {
-                console.log(`🟡 Using dedicated Morse transactions function for ${this.networkMode}`);
-                return await this.getMorseTransactions(address);
-            }
-
-            // FALLBACK: Usar cliente genérico solo para casos especiales
             if (this.isForcedOffline) {
-                console.warn("Operating in offline mode. Transactions not available.");
+                console.warn("Cannot get transactions in offline mode");
                 return [];
             }
 
-            console.log(`📡 Using generic client for ${this.networkType} ${this.networkMode}`);
+            // Determinar la URL base según el entorno
+            const isProduction = import.meta.env.PROD;
+            const baseUrl = isProduction
+                ? 'https://migration.shannon.nodefleet.net'
+                : '';
 
-            if (!this.client) {
-                const reconnected = await this.tryReconnect();
-                if (!reconnected) {
-                    console.warn(`❌ Could not connect to ${this.networkType} ${this.networkMode} network`);
-                    return [];
+            // Determinar la URL según el tipo de red
+            let url: string;
+            if (this.networkType === 'morse') {
+                url = `${baseUrl}/api/tango/v1/query/account/${address}/txs`;
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`Error getting transactions: ${response.status} ${response.statusText}`);
                 }
+
+                const data = await response.json();
+                return this.formatMorseTransactions(data.txs || []);
+            } else {
+                // Shannon
+                url = `${baseUrl}/api/poktradar/address/transactions?address=${address}&limit=20`;
+                const response = await fetch(url);
+
+                if (!response.ok) {
+                    throw new Error(`Error getting transactions: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                return this.formatShannonTransactions(data.transactions || []);
             }
-
-            const sendTx = await this.client!.searchTx(`message.sender='${address}'`);
-            const sendTransactions: Transaction[] = this.decodeTransactions(sendTx).map((message) => ({
-                ...message,
-                type: "send",
-            }));
-
-            const recvTx = await this.client!.searchTx(`transfer.recipient='${address}'`);
-            const recvTransactions: Transaction[] = this.decodeTransactions(recvTx).map((message) => ({
-                ...message,
-                type: "recv",
-            }));
-
-            const transactions = [...sendTransactions, ...recvTransactions];
-            console.log(`✅ Found ${transactions.length} transactions for ${this.networkType} ${this.networkMode}`);
-            return transactions.sort((a, b) => b.height - a.height);
         } catch (error) {
-            console.error(`❌ Error getting transactions for ${this.networkType} ${this.networkMode}:`, error);
+            console.error('Error getting transactions:', error);
             return [];
         }
     }
@@ -686,5 +675,56 @@ export class WalletManager {
         );
 
         return result.transactionHash;
+    }
+
+    /**
+     * Formatea las transacciones de Morse a un formato común
+     * @param transactions - Transacciones de Morse
+     * @returns {Transaction[]} - Transacciones formateadas
+     */
+    private formatMorseTransactions(transactions: any[]): Transaction[] {
+        try {
+            return transactions.map(tx => {
+                const amount = tx.tx?.value?.msg?.[0]?.value?.amount?.[0]?.amount || '0';
+                return {
+                    hash: tx.txhash || '',
+                    height: parseInt(tx.height) || 0,
+                    timestamp: new Date(tx.timestamp || Date.now()).getTime(),
+                    type: tx.tx?.value?.msg?.[0]?.type?.includes('send') ? 'send' : 'recv',
+                    from: tx.tx?.value?.msg?.[0]?.value?.from_address || '',
+                    to: tx.tx?.value?.msg?.[0]?.value?.to_address || '',
+                    value: amount,
+                    status: 'confirmed'
+                } as Transaction;
+            }).sort((a, b) => b.height - a.height);
+        } catch (error) {
+            console.error('Error formatting Morse transactions:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Formatea las transacciones de Shannon a un formato común
+     * @param transactions - Transacciones de Shannon
+     * @returns {Transaction[]} - Transacciones formateadas
+     */
+    private formatShannonTransactions(transactions: any[]): Transaction[] {
+        try {
+            return transactions.map(tx => {
+                return {
+                    hash: tx.hash || '',
+                    height: parseInt(tx.height) || 0,
+                    timestamp: new Date(tx.timestamp || Date.now()).getTime(),
+                    type: tx.type === 'send' ? 'send' : 'recv',
+                    from: tx.from || '',
+                    to: tx.to || '',
+                    value: tx.amount || '0',
+                    status: 'confirmed'
+                } as Transaction;
+            }).sort((a, b) => b.height - a.height);
+        } catch (error) {
+            console.error('Error formatting Shannon transactions:', error);
+            return [];
+        }
     }
 } 
