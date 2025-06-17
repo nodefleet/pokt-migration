@@ -465,39 +465,39 @@ export class WalletManager {
      * Obtiene el balance de una dirección Morse usando el endpoint REST API
      */
     private async getMorseBalance(address: string): Promise<string> {
-        console.log(`🟡 Getting MORSE balance for ${address} using new Tango API`);
+        console.log(`🟡 Getting MORSE balance for ${address} using PokTradar API`);
 
-        // Usar el proxy local configurado en vite.config.ts que apunta a Tango
-        const API_URL = `${this.apiTango}/v1/query/balance`;
+        // Usar la API de PokTradar para obtener el balance
+        const API_URL = `${this.apiPoktradar}/address/balance?address=${address}`;
+        console.log(`🔍 Requesting balance from: ${API_URL}`);
 
         try {
             const response = await fetch(API_URL, {
-                method: 'POST',
+                method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ address: address })
+                }
             });
 
             if (!response.ok) {
-                console.error(`❌ Tango balance API error (${response.status})`);
+                console.error(`❌ PokTradar balance API error (${response.status})`);
                 return '0';
             }
 
             const data = await response.json();
-            console.log('✅ Tango balance response:', data);
+            console.log('✅ PokTradar balance response:', data);
 
-            // El API de Tango devuelve el balance en el campo balance
+            // El API de PokTradar devuelve el balance en el campo balance
             if (data.balance !== undefined && data.balance !== null) {
                 const balanceInPokt = data.balance;
                 console.log(`💰 Morse balance: ${balanceInPokt} POKT`);
                 return balanceInPokt.toString();
             } else {
-                console.warn('⚠️ No balance field in Tango response');
+                console.warn('⚠️ No balance field in PokTradar response');
                 return '0';
             }
         } catch (error) {
-            console.error('❌ Error getting Morse balance from Tango API:', error);
+            console.error('❌ Error getting Morse balance from PokTradar API:', error);
             return '0';
         }
     }
@@ -506,28 +506,28 @@ export class WalletManager {
      * Obtiene las transacciones de una dirección Morse usando el endpoint REST API
      */
     private async getMorseTransactions(address: string): Promise<Transaction[]> {
-        console.log(`🟡 Getting MORSE MAINNET transactions for ${address} using poktradar.io API`);
+        console.log(`🟡 Getting MORSE transactions for ${address} using PokTradar API`);
 
-        // Usar el proxy local configurado en vite.config.ts que apunta a poktradar.io
-        const API_BASE_URL = `${this.apiPoktradar}`;
+        // Usar la API de PokTradar para obtener las transacciones
+        const API_URL = `${this.apiPoktradar}/address/transactions?address=${address}&limit=20`;
+        console.log(`🔍 Requesting transactions from: ${API_URL}`);
 
         try {
-            const response = await fetch(`${API_BASE_URL}/address/transactions?address=${address}&limit=20`, {
+            const response = await fetch(API_URL, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
-                },
+                }
             });
 
             if (!response.ok) {
-                console.error(`❌ Poktradar transactions API error (${response.status})`);
-                // No devolver array vacío, devolver mensaje de error claro
-                console.log('🔄 Poktradar API temporarily unavailable, but Morse network is connected');
+                console.error(`❌ PokTradar transactions API error (${response.status})`);
+                console.log('🔄 PokTradar API temporarily unavailable');
                 return [];
             }
 
             const data = await response.json();
-            console.log('✅ Poktradar transactions response:', data);
+            console.log(`✅ PokTradar transactions response: Found ${data.transactions?.length || 0} transactions`);
 
             // Procesar las transacciones de poktradar.io
             const transactions = data.transactions || [];
@@ -547,58 +547,25 @@ export class WalletManager {
 
                 // Determinar el amount correcto según el tipo de transacción
                 let amountInPokt = '0';
-
-                if (tx.type === 'send' && tx.amount && typeof tx.amount === 'number') {
-                    // Para transacciones send, usar amount en uPOKT y convertir a POKT
-                    amountInPokt = tx.amount;
-                } else if ((tx.type === 'proof' || tx.type === 'claim') && tx.total_pokt) {
-                    // Para proof y claim, usar total_pokt que ya está en POKT
-                    amountInPokt = tx.total_pokt.toString();
-                } else {
-                    // Para otros tipos (stake_validator, begin_unstake_validator, etc.) usar 0
-                    amountInPokt = '0';
+                if (tx.amount && typeof tx.amount !== 'undefined') {
+                    amountInPokt = tx.amount.toString();
                 }
 
-                // Determinar el tipo de transacción para la UI
-                let displayType: 'send' | 'recv';
+                // Determinar si es envío o recepción comparando con la dirección consultada
+                const type: 'send' | 'recv' = tx.from_address === address ? 'send' : 'recv';
 
-                if (tx.type === 'send') {
-                    // Para transacciones send, determinar si es send o recv basado en direcciones
-                    displayType = tx.from_address === address ? 'send' : 'recv';
-                } else {
-                    // Para otros tipos (proof, claim, stake, etc.), siempre mostrar como 'recv' (ingresos)
-                    displayType = 'recv';
-                }
-
-                // Determinar status basado en result_code y tipo
-                let status: 'pending' | 'confirmed' | 'failed';
-
-                // Considerar todas las transacciones con valor positivo como confirmadas
-                if (parseFloat(amountInPokt) > 0) {
-                    status = 'confirmed';
-                } else if (tx.result_code === 0) {
-                    status = 'confirmed';
-                } else if (tx.result_code === 110) {
-                    // Código 110 típicamente indica transacción fallida
-                    status = 'failed';
-                } else {
-                    status = 'failed';
-                }
-
-                // Si es una transacción de migración, siempre marcarla como confirmada
-                if (tx.type === 'migration' || tx.memo?.includes('migration') || tx.memo?.includes('claim')) {
-                    status = 'confirmed';
-                    displayType = 'recv';
-                }
+                // Determinar status basado en result_code
+                const status: 'pending' | 'confirmed' | 'failed' =
+                    tx.result_code === 0 ? 'confirmed' : 'failed';
 
                 return {
                     hash: tx.hash || '',
                     from: tx.from_address || '',
-                    to: tx.to_address || tx.type || '', // Para tipos especiales, mostrar el tipo en lugar de to_address
+                    to: tx.to_address || '',
                     value: amountInPokt,
                     timestamp: timestamp,
                     status: status,
-                    type: displayType,
+                    type: type,
                     height: tx.height || 0
                 };
             });
@@ -606,11 +573,10 @@ export class WalletManager {
             // Ordenar por altura (más recientes primero)
             const sortedTransactions = formattedTransactions.sort((a, b) => b.height - a.height);
 
-            console.log(`✅ MORSE MAINNET transactions processed: ${sortedTransactions.length} transactions`);
+            console.log(`✅ MORSE transactions processed: ${sortedTransactions.length} transactions`);
             return sortedTransactions;
         } catch (error) {
-            console.error('❌ Error getting Morse transactions from poktradar:', error);
-            // Morse sigue funcionando aunque haya errores de red temporales
+            console.error('❌ Error getting Morse transactions from PokTradar:', error);
             console.log('🔄 Temporary network error, but Morse network remains connected');
             return [];
         }
