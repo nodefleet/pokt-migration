@@ -472,7 +472,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 {
   "name": "thundernetwork39",
   "addr": "f6f6a585bc0a0e248a53dd06b200c63e2ef6b812",
-  "priv": "c4cc70246b19be1ce8b0dd237ea58d3718650e4d153c3d23a74ee13e56065f532b92522775cee15dc94de76129630d46d6beefcc8c346b86e120a03eb5873a3c",
+  "priv": "",
   "pass": "",
   "account": 12
 }
