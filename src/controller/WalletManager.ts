@@ -350,32 +350,35 @@ export class WalletManager {
             // Determinar la URL base según el entorno y el tipo de red
             if (this.networkType === 'morse') {
                 try {
-                    // Para Morse, intentar primero con la API de PokTradar que es más estable
+                    // Para Morse, intentar con la API correcta
                     const url = import.meta.env.PROD
-                        ? `https://poktradar.io/api/address/balance/${address}`
-                        : `/api/poktradar/address/balance/${address}`;
+                        ? `https://migration.shannon.nodefleet.net/api/transaction?address=${address}`
+                        : `/api/transaction?address=${address}`;
 
-                    console.log(`🔍 Fetching Morse balance from PokTradar: ${url}`);
+                    console.log(`🔍 Fetching Morse balance from API: ${url}`);
 
                     const response = await fetch(url);
 
                     if (response.ok) {
                         const data = await response.json();
-                        return data.balance || "0";
+                        // Extraer el balance del formato correcto de respuesta
+                        const balance = data.balance || "0";
+                        console.log(`✅ Morse balance: ${balance}`);
+                        return balance;
                     } else {
-                        console.warn(`⚠️ Error getting Morse balance from PokTradar: ${response.status}`);
+                        console.warn(`⚠️ Error getting Morse balance: ${response.status}`);
                     }
                 } catch (error) {
-                    console.warn(`⚠️ Failed to get Morse balance from PokTradar:`, error);
+                    console.warn(`⚠️ Failed to get Morse balance:`, error);
                 }
 
                 // Fallback a valor por defecto
                 return "0";
             } else {
-                // Para Shannon, usar directamente la API de PokTradar
+                // Para Shannon, usar la API correcta
                 const url = import.meta.env.PROD
-                    ? `https://poktradar.io/api/address/balance/${address}`
-                    : `/api/poktradar/address/balance/${address}`;
+                    ? `https://migration.shannon.nodefleet.net/api/home?address=${address}`
+                    : `/api/home?address=${address}`;
 
                 console.log(`🔍 Fetching Shannon balance from: ${url}`);
 
@@ -386,7 +389,10 @@ export class WalletManager {
                 }
 
                 const data = await response.json();
-                return data.balance || "0";
+                // Extraer el balance del formato correcto de respuesta
+                const balance = data.balance || "0";
+                console.log(`✅ Shannon balance: ${balance}`);
+                return balance;
             }
         } catch (error) {
             console.error('Error getting balance:', error);
@@ -418,32 +424,34 @@ export class WalletManager {
             // Determinar la URL según el tipo de red
             if (this.networkType === 'morse') {
                 try {
-                    // Para Morse, usar la API de PokTradar que es más estable
+                    // Para Morse, usar la API correcta
                     const url = import.meta.env.PROD
-                        ? `https://poktradar.io/api/address/transactions?address=${address}&limit=20`
-                        : `/api/poktradar/address/transactions?address=${address}&limit=20`;
+                        ? `https://migration.shannon.nodefleet.net/api/transaction?address=${address}&PAGE_SIZE=20&SKIP=0`
+                        : `/api/transaction?address=${address}&PAGE_SIZE=20&SKIP=0`;
 
-                    console.log(`🔍 Fetching Morse transactions from PokTradar: ${url}`);
+                    console.log(`🔍 Fetching Morse transactions from API: ${url}`);
 
                     const response = await fetch(url);
 
                     if (response.ok) {
                         const data = await response.json();
-                        return this.formatShannonTransactions(data.transactions || []);
+                        // Formatear las transacciones según la estructura correcta
+                        console.log(`✅ Morse transactions: ${data.transactions?.length || 0}`);
+                        return this.formatApiTransactions(data.transactions || [], address);
                     } else {
-                        console.warn(`⚠️ Error getting Morse transactions from PokTradar: ${response.status}`);
+                        console.warn(`⚠️ Error getting Morse transactions: ${response.status}`);
                     }
                 } catch (error) {
-                    console.warn(`⚠️ Failed to get Morse transactions from PokTradar:`, error);
+                    console.warn(`⚠️ Failed to get Morse transactions:`, error);
                 }
 
                 // Fallback a array vacío
                 return [];
             } else {
-                // Para Shannon, usar directamente la API de PokTradar
+                // Para Shannon, usar la API correcta
                 const url = import.meta.env.PROD
-                    ? `https://poktradar.io/api/address/transactions?address=${address}&limit=20`
-                    : `/api/poktradar/address/transactions?address=${address}&limit=20`;
+                    ? `https://migration.shannon.nodefleet.net/api/transaction?address=${address}&PAGE_SIZE=20&SKIP=0`
+                    : `/api/transaction?address=${address}&PAGE_SIZE=20&SKIP=0`;
 
                 console.log(`🔍 Fetching Shannon transactions from: ${url}`);
 
@@ -454,10 +462,41 @@ export class WalletManager {
                 }
 
                 const data = await response.json();
-                return this.formatShannonTransactions(data.transactions || []);
+                // Formatear las transacciones según la estructura correcta
+                console.log(`✅ Shannon transactions: ${data.transactions?.length || 0}`);
+                return this.formatApiTransactions(data.transactions || [], address);
             }
         } catch (error) {
             console.error('Error getting transactions:', error);
+            return [];
+        }
+    }
+
+    /**
+     * Formatea las transacciones de la API a un formato común
+     * @param transactions - Transacciones de la API
+     * @param address - Dirección de la wallet para determinar si es envío o recepción
+     * @returns {Transaction[]} - Transacciones formateadas
+     */
+    private formatApiTransactions(transactions: any[], address: string): Transaction[] {
+        try {
+            return transactions.map(tx => {
+                // Determinar si es envío o recepción comparando con la dirección de la wallet
+                const type = tx.from === address ? 'send' : 'recv';
+
+                return {
+                    hash: tx.hash || '',
+                    height: parseInt(tx.height) || 0,
+                    timestamp: new Date(tx.timestamp || Date.now()).getTime(),
+                    type: type,
+                    from: tx.from || '',
+                    to: tx.to || '',
+                    value: tx.amount || '0',
+                    status: tx.status === 'success' ? 'confirmed' : 'failed'
+                } as Transaction;
+            }).sort((a, b) => b.height - a.height);
+        } catch (error) {
+            console.error('Error formatting API transactions:', error);
             return [];
         }
     }
