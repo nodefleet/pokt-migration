@@ -336,7 +336,7 @@ export class WalletManager {
     }
 
     /**
-     * Obtiene el balance de la wallet
+     * Obtiene el balance de una wallet
      * @param address - La dirección de la wallet
      * @returns {Promise<string>} El balance en upokt
      */
@@ -349,14 +349,16 @@ export class WalletManager {
 
             // Determinar la URL base según el entorno
             const isProduction = import.meta.env.PROD;
-            const baseUrl = isProduction
-                ? 'https://migration.shannon.nodefleet.net'
-                : '';
 
             // Determinar la URL según el tipo de red
-            let url: string;
             if (this.networkType === 'morse') {
-                url = `${baseUrl}/api/tango/v1/query/balance`;
+                // Para Morse, usar directamente la API de Tango
+                const url = isProduction
+                    ? 'https://pocket.tango.admin.poktscan.cloud/v1/query/balance'
+                    : '/api/tango/v1/query/balance';
+
+                console.log(`🔍 Fetching Morse balance from: ${url}`);
+
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: {
@@ -374,8 +376,13 @@ export class WalletManager {
                 const data = await response.json();
                 return data.balance || "0";
             } else {
-                // Shannon
-                url = `${baseUrl}/api/poktradar/address/balance/${address}`;
+                // Para Shannon, usar directamente la API de PokTradar
+                const url = isProduction
+                    ? `https://poktradar.io/api/address/balance/${address}`
+                    : `/api/poktradar/address/balance/${address}`;
+
+                console.log(`🔍 Fetching Shannon balance from: ${url}`);
+
                 const response = await fetch(url);
 
                 if (!response.ok) {
@@ -414,14 +421,16 @@ export class WalletManager {
 
             // Determinar la URL base según el entorno
             const isProduction = import.meta.env.PROD;
-            const baseUrl = isProduction
-                ? 'https://migration.shannon.nodefleet.net'
-                : '';
 
             // Determinar la URL según el tipo de red
-            let url: string;
             if (this.networkType === 'morse') {
-                url = `${baseUrl}/api/tango/v1/query/account/${address}/txs`;
+                // Para Morse, usar directamente la API de Tango
+                const url = isProduction
+                    ? `https://pocket.tango.admin.poktscan.cloud/v1/query/account/${address}/txs`
+                    : `/api/tango/v1/query/account/${address}/txs`;
+
+                console.log(`🔍 Fetching Morse transactions from: ${url}`);
+
                 const response = await fetch(url);
 
                 if (!response.ok) {
@@ -431,8 +440,13 @@ export class WalletManager {
                 const data = await response.json();
                 return this.formatMorseTransactions(data.txs || []);
             } else {
-                // Shannon
-                url = `${baseUrl}/api/poktradar/address/transactions?address=${address}&limit=20`;
+                // Para Shannon, usar directamente la API de PokTradar
+                const url = isProduction
+                    ? `https://poktradar.io/api/address/transactions?address=${address}&limit=20`
+                    : `/api/poktradar/address/transactions?address=${address}&limit=20`;
+
+                console.log(`🔍 Fetching Shannon transactions from: ${url}`);
+
                 const response = await fetch(url);
 
                 if (!response.ok) {
