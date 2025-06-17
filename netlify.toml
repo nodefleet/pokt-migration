@@ -1,0 +1,20 @@
+# Configuración de Netlify para POKT UI
+
+# Configuración de build
+[build]
+  publish = "dist"
+  command = "npm run build"
+
+# Redirects para React Router
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Headers para CORS
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Origin, X-Requested-With, Content-Type, Accept" 

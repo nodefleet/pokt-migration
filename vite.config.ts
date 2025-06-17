@@ -58,6 +58,8 @@ export default defineConfig({
     define: {
         'process.env': {},
         global: 'globalThis',
+        'import.meta.env.POKTRADAR_API': JSON.stringify('https://poktradar.io/api'),
+        'import.meta.env.TANGO_API': JSON.stringify('https://pocket.tango.admin.poktscan.cloud')
     },
     base: '/'
 }); 

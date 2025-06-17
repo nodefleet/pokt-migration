@@ -347,37 +347,33 @@ export class WalletManager {
                 return "0";
             }
 
-            // Determinar la URL base según el entorno
-            const isProduction = import.meta.env.PROD;
-
-            // Determinar la URL según el tipo de red
+            // Determinar la URL base según el entorno y el tipo de red
             if (this.networkType === 'morse') {
-                // Para Morse, usar directamente la API de Tango
-                const url = isProduction
-                    ? 'https://pocket.tango.admin.poktscan.cloud/v1/query/balance'
-                    : '/api/tango/v1/query/balance';
+                try {
+                    // Para Morse, intentar primero con la API de PokTradar que es más estable
+                    const url = import.meta.env.PROD
+                        ? `https://poktradar.io/api/address/balance/${address}`
+                        : `/api/poktradar/address/balance/${address}`;
 
-                console.log(`🔍 Fetching Morse balance from: ${url}`);
+                    console.log(`🔍 Fetching Morse balance from PokTradar: ${url}`);
 
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        address
-                    })
-                });
+                    const response = await fetch(url);
 
-                if (!response.ok) {
-                    throw new Error(`Error getting balance: ${response.status} ${response.statusText}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        return data.balance || "0";
+                    } else {
+                        console.warn(`⚠️ Error getting Morse balance from PokTradar: ${response.status}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Failed to get Morse balance from PokTradar:`, error);
                 }
 
-                const data = await response.json();
-                return data.balance || "0";
+                // Fallback a valor por defecto
+                return "0";
             } else {
                 // Para Shannon, usar directamente la API de PokTradar
-                const url = isProduction
+                const url = import.meta.env.PROD
                     ? `https://poktradar.io/api/address/balance/${address}`
                     : `/api/poktradar/address/balance/${address}`;
 
@@ -419,29 +415,33 @@ export class WalletManager {
                 return [];
             }
 
-            // Determinar la URL base según el entorno
-            const isProduction = import.meta.env.PROD;
-
             // Determinar la URL según el tipo de red
             if (this.networkType === 'morse') {
-                // Para Morse, usar directamente la API de Tango
-                const url = isProduction
-                    ? `https://pocket.tango.admin.poktscan.cloud/v1/query/account/${address}/txs`
-                    : `/api/tango/v1/query/account/${address}/txs`;
+                try {
+                    // Para Morse, usar la API de PokTradar que es más estable
+                    const url = import.meta.env.PROD
+                        ? `https://poktradar.io/api/address/transactions?address=${address}&limit=20`
+                        : `/api/poktradar/address/transactions?address=${address}&limit=20`;
 
-                console.log(`🔍 Fetching Morse transactions from: ${url}`);
+                    console.log(`🔍 Fetching Morse transactions from PokTradar: ${url}`);
 
-                const response = await fetch(url);
+                    const response = await fetch(url);
 
-                if (!response.ok) {
-                    throw new Error(`Error getting transactions: ${response.status} ${response.statusText}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        return this.formatShannonTransactions(data.transactions || []);
+                    } else {
+                        console.warn(`⚠️ Error getting Morse transactions from PokTradar: ${response.status}`);
+                    }
+                } catch (error) {
+                    console.warn(`⚠️ Failed to get Morse transactions from PokTradar:`, error);
                 }
 
-                const data = await response.json();
-                return this.formatMorseTransactions(data.txs || []);
+                // Fallback a array vacío
+                return [];
             } else {
                 // Para Shannon, usar directamente la API de PokTradar
-                const url = isProduction
+                const url = import.meta.env.PROD
                     ? `https://poktradar.io/api/address/transactions?address=${address}&limit=20`
                     : `/api/poktradar/address/transactions?address=${address}&limit=20`;
 
