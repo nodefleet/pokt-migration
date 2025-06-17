@@ -30,8 +30,6 @@ export class WalletManager {
     private maxConnectionAttempts: number = 3;
     private lastSuccessfulRpcUrl: string | null = null;
     private isForcedOffline: boolean = false; // Para permitir operación offline
-    public apiPoktradar: string = "https://poktradar.io/api";
-    public apiTango: string = "https://pocket.tango.admin.poktscan.cloud";
 
     constructor(networkType: NetworkType = 'shannon', isTestnet: boolean = true) {
         this.networkType = networkType;
@@ -338,59 +336,36 @@ export class WalletManager {
     }
 
     /**
-     * Obtiene el balance de la wallet
+     * Obtiene el balance de una wallet
      * @param address - La dirección de la wallet
      * @returns {Promise<string>} El balance en upokt
      */
     async getBalance(address: string): Promise<string> {
         try {
-            // DETECCIÓN AUTOMÁTICA por formato de dirección
-            if (this.isMorseAddress(address)) {
-                console.log(`🟡 Auto-detected Morse address format, using Morse balance function`);
-                return await this.getMorseBalance(address);
-            }
-
-            // SHANNON: Usar ShannonWallet que maneja mainnet/testnet correctamente
-            if (this.networkType === 'shannon' && this.shannonWallet) {
-                return await this.shannonWallet.getBalance(address);
-            }
-
-            // MORSE: Usar función específica de Morse (independiente del cliente genérico)
-            if (this.networkType === 'morse') {
-                console.log(`🟡 Using dedicated Morse balance function for ${this.networkMode}`);
-                return await this.getMorseBalance(address);
-            }
-
-            // FALLBACK: Cliente genérico solo para casos especiales
             if (this.isForcedOffline) {
-                console.warn("Operating in offline mode. Balance not available.");
-                return '0';
+                console.warn("Cannot get balance in offline mode");
+                return "0";
             }
 
-            if (!this.client) {
-                const reconnected = await this.tryReconnect();
-                if (!reconnected) {
-                    console.warn("Could not connect to network to get balance. Using '0' as default value.");
-                    return '0';
-                }
+            // Consultar directamente a la API de PokTradar
+            const url = `https://poktradar.io/api/address/balance?address=${address}`;
+            console.log(`🔍 Fetching balance from PokTradar API: ${url}`);
+
+            // API permite cualquier origen
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`Error getting balance: ${response.status} ${response.statusText}`);
             }
 
-            if (!address || address.trim() === '') {
-                console.error('Invalid wallet address');
-                return '0';
-            }
-
-            const result = await this.client?.getBalance(address, "upokt");
-
-            if (!result || typeof result.amount !== 'string') {
-                console.error('Invalid balance response:', result);
-                return '0';
-            }
-
-            return result.amount;
+            const data = await response.json();
+            // El API de PokTradar devuelve el balance en el campo balance
+            const balance = data.balance || "0";
+            console.log(`✅ Balance: ${balance}`);
+            return balance;
         } catch (error) {
             console.error('Error getting balance:', error);
-            return '0';
+            return "0";
         }
     }
 
@@ -409,179 +384,114 @@ export class WalletManager {
      * @returns {Promise<Transaction[]>} Lista de transacciones
      */
     async getTransactions(address: string): Promise<Transaction[]> {
-        console.log(`🔍 Getting transactions for ${this.networkType} ${this.networkMode} - Address: ${address}`);
-
         try {
-            // SHANNON: Usar ShannonWallet que ya maneja mainnet/testnet correctamente
-            if (this.networkType === 'shannon' && this.shannonWallet) {
-                console.log(`🔵 Using Shannon wallet for transactions (${this.networkMode})`);
-                return await this.shannonWallet.getTransactions(address);
-            }
-
-            // MORSE: Usar función específica de Morse (independiente del cliente genérico)
-            if (this.networkType === 'morse') {
-                console.log(`🟡 Using dedicated Morse transactions function for ${this.networkMode}`);
-                return await this.getMorseTransactions(address);
-            }
-
-            // FALLBACK: Usar cliente genérico solo para casos especiales
             if (this.isForcedOffline) {
-                console.warn("Operating in offline mode. Transactions not available.");
+                console.warn("Cannot get transactions in offline mode");
                 return [];
             }
 
-            console.log(`📡 Using generic client for ${this.networkType} ${this.networkMode}`);
+            // Consultar directamente a la API de PokTradar
+            const url = `https://poktradar.io/api/address/transactions?address=${address}&limit=20`;
+            console.log(`🔍 Fetching transactions from PokTradar API: ${url}`);
 
-            if (!this.client) {
-                const reconnected = await this.tryReconnect();
-                if (!reconnected) {
-                    console.warn(`❌ Could not connect to ${this.networkType} ${this.networkMode} network`);
-                    return [];
-                }
+            // API permite cualquier origen
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(`Error getting transactions: ${response.status} ${response.statusText}`);
             }
 
-            const sendTx = await this.client!.searchTx(`message.sender='${address}'`);
-            const sendTransactions: Transaction[] = this.decodeTransactions(sendTx).map((message) => ({
-                ...message,
-                type: "send",
-            }));
+            const data = await response.json();
+            console.log(`✅ Transactions found: ${data.transactions?.length || 0}`);
 
-            const recvTx = await this.client!.searchTx(`transfer.recipient='${address}'`);
-            const recvTransactions: Transaction[] = this.decodeTransactions(recvTx).map((message) => ({
-                ...message,
-                type: "recv",
-            }));
-
-            const transactions = [...sendTransactions, ...recvTransactions];
-            console.log(`✅ Found ${transactions.length} transactions for ${this.networkType} ${this.networkMode}`);
-            return transactions.sort((a, b) => b.height - a.height);
+            // Formatear las transacciones según la estructura correcta
+            return this.formatTransactions(data.transactions || [], address);
         } catch (error) {
-            console.error(`❌ Error getting transactions for ${this.networkType} ${this.networkMode}:`, error);
+            console.error('Error getting transactions:', error);
             return [];
         }
     }
 
     /**
-     * Obtiene el balance de una dirección Morse usando el endpoint REST API
+     * Formatea las transacciones de la API a un formato común
+     * @param transactions - Transacciones de la API
+     * @param address - Dirección de la wallet para determinar si es envío o recepción
+     * @returns {Transaction[]} - Transacciones formateadas
      */
-    private async getMorseBalance(address: string): Promise<string> {
-        console.log(`🟡 Getting MORSE balance for ${address} using PokTradar API`);
-
-        // Usar la API de PokTradar para obtener el balance
-        const API_URL = `${this.apiPoktradar}/address/balance?address=${address}`;
-        console.log(`🔍 Requesting balance from: ${API_URL}`);
-
+    private formatTransactions(transactions: any[], address: string): Transaction[] {
         try {
-            const response = await fetch(API_URL, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            if (!response.ok) {
-                console.error(`❌ PokTradar balance API error (${response.status})`);
-                return '0';
-            }
-
-            const data = await response.json();
-            console.log('✅ PokTradar balance response:', data);
-
-            // El API de PokTradar devuelve el balance en el campo balance
-            if (data.balance !== undefined && data.balance !== null) {
-                const balanceInPokt = data.balance;
-                console.log(`💰 Morse balance: ${balanceInPokt} POKT`);
-                return balanceInPokt.toString();
-            } else {
-                console.warn('⚠️ No balance field in PokTradar response');
-                return '0';
-            }
-        } catch (error) {
-            console.error('❌ Error getting Morse balance from PokTradar API:', error);
-            return '0';
-        }
-    }
-
-    /**
-     * Obtiene las transacciones de una dirección Morse usando el endpoint REST API
-     */
-    private async getMorseTransactions(address: string): Promise<Transaction[]> {
-        console.log(`🟡 Getting MORSE transactions for ${address} using PokTradar API`);
-
-        // Usar la API de PokTradar para obtener las transacciones
-        const API_URL = `${this.apiPoktradar}/address/transactions?address=${address}&limit=20`;
-        console.log(`🔍 Requesting transactions from: ${API_URL}`);
-
-        try {
-            const response = await fetch(API_URL, {
-                method: 'GET',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            });
-
-            if (!response.ok) {
-                console.error(`❌ PokTradar transactions API error (${response.status})`);
-                console.log('🔄 PokTradar API temporarily unavailable');
-                return [];
-            }
-
-            const data = await response.json();
-            console.log(`✅ PokTradar transactions response: Found ${data.transactions?.length || 0} transactions`);
-
-            // Procesar las transacciones de poktradar.io
-            const transactions = data.transactions || [];
-
-            if (transactions.length === 0) {
-                console.log('📭 No transactions found for this Morse address');
-                return [];
-            }
-
-            // Convertir al formato esperado usando la estructura real de poktradar
-            const formattedTransactions: Transaction[] = transactions.map((tx: any) => {
+            return transactions.map(tx => {
                 // Convertir timestamp de ISO string a timestamp number
                 let timestamp = 0;
                 if (tx.block_time) {
                     timestamp = new Date(tx.block_time).getTime();
+                } else if (tx.timestamp) {
+                    timestamp = new Date(tx.timestamp).getTime();
                 }
 
-                // Determinar el amount correcto según el tipo de transacción
-                let amountInPokt = '0';
+                // Determinar si es envío o recepción comparando con la dirección de la wallet
+                const type = tx.from_address === address || tx.from === address ? 'send' : 'recv';
+
+                // Determinar el amount correcto
+                let amount = '0';
                 if (tx.amount && typeof tx.amount !== 'undefined') {
-                    amountInPokt = tx.amount.toString();
+                    amount = tx.amount.toString();
                 }
-
-                // Determinar si es envío o recepción comparando con la dirección consultada
-                const type: 'send' | 'recv' = tx.from_address === address ? 'send' : 'recv';
-
-                // Determinar status basado en result_code
-                const status: 'pending' | 'confirmed' | 'failed' =
-                    tx.result_code === 0 ? 'confirmed' : 'failed';
 
                 return {
                     hash: tx.hash || '',
-                    from: tx.from_address || '',
-                    to: tx.to_address || '',
-                    value: amountInPokt,
+                    height: parseInt(tx.height) || 0,
                     timestamp: timestamp,
-                    status: status,
                     type: type,
-                    height: tx.height || 0
-                };
-            });
-
-            // Ordenar por altura (más recientes primero)
-            const sortedTransactions = formattedTransactions.sort((a, b) => b.height - a.height);
-
-            console.log(`✅ MORSE transactions processed: ${sortedTransactions.length} transactions`);
-            return sortedTransactions;
+                    from: tx.from_address || tx.from || '',
+                    to: tx.to_address || tx.to || '',
+                    value: amount,
+                    status: tx.result_code === 0 || tx.status === 'success' ? 'confirmed' : 'failed'
+                } as Transaction;
+            }).sort((a, b) => b.height - a.height);
         } catch (error) {
-            console.error('❌ Error getting Morse transactions from PokTradar:', error);
-            console.log('🔄 Temporary network error, but Morse network remains connected');
+            console.error('Error formatting transactions:', error);
             return [];
         }
     }
 
+    /**
+     * Envía una transacción
+     * @param to - Dirección destino
+     * @param amount - Cantidad a enviar en upokt
+     * @returns {Promise<string>} Hash de la transacción
+     */
+    async sendTransaction(to: string, amount: string): Promise<string> {
+        if (!this.wallet || !this.client) {
+            throw new Error('Wallet or client not initialized');
+        }
+
+        const [firstAccount] = await this.wallet.getAccounts();
+        const currentNetwork = this.getCurrentNetwork();
+
+        this.signingClient = await SigningStargateClient.connectWithSigner(
+            currentNetwork.rpcUrls[0],
+            this.wallet
+        );
+
+        const result = await this.signingClient.sendTokens(
+            firstAccount.address,
+            to,
+            [{ denom: 'upokt', amount }],
+            {
+                amount: [{ denom: 'upokt', amount: '5000' }],
+                gas: '200000',
+            }
+        );
+
+        return result.transactionHash;
+    }
+
+    /**
+     * Decodifica transacciones del formato IndexedTx
+     * @param txs - Lista de transacciones indexadas
+     * @returns {Transaction[]} - Transacciones decodificadas
+     */
     private decodeTransactions(txs: IndexedTx[]): Transaction[] {
         const messages: Transaction[] = [];
 
@@ -622,37 +532,5 @@ export class WalletManager {
         }
 
         return messages;
-    }
-
-    /**
-     * Envía una transacción
-     * @param to - Dirección destino
-     * @param amount - Cantidad a enviar en upokt
-     * @returns {Promise<string>} Hash de la transacción
-     */
-    async sendTransaction(to: string, amount: string): Promise<string> {
-        if (!this.wallet || !this.client) {
-            throw new Error('Wallet or client not initialized');
-        }
-
-        const [firstAccount] = await this.wallet.getAccounts();
-        const currentNetwork = this.getCurrentNetwork();
-
-        this.signingClient = await SigningStargateClient.connectWithSigner(
-            currentNetwork.rpcUrls[0],
-            this.wallet
-        );
-
-        const result = await this.signingClient.sendTokens(
-            firstAccount.address,
-            to,
-            [{ denom: 'upokt', amount }],
-            {
-                amount: [{ denom: 'upokt', amount: '5000' }],
-                gas: '200000',
-            }
-        );
-
-        return result.transactionHash;
     }
 } 

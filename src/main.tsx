@@ -691,11 +691,9 @@ const root = ReactDOM.createRoot(
 );
 
 root.render(
-    <React.StrictMode>
-        <BrowserRouter basename="/">
-            <QueryClientProvider client={queryClient}>
-                <App />
-            </QueryClientProvider>
-        </BrowserRouter>
-    </React.StrictMode>
+    <BrowserRouter basename="/">
+        <QueryClientProvider client={queryClient}>
+            <App />
+        </QueryClientProvider>
+    </BrowserRouter>
 ); 
