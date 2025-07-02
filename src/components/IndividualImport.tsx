@@ -4,6 +4,7 @@ import { IndividualImportProps } from '../types';
 import { ERROR_MESSAGES } from '../controller/config';
 import { useNavigate } from 'react-router-dom';
 import { storageService } from '../controller/storage.service';
+import { morseWalletService } from '../controller/MorseWallet';
 
 const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletImport, onCreateWallet }) => {
     const [morseOpen, setMorseOpen] = useState(false);
@@ -26,7 +27,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
     const navigate = useNavigate();
 
-    // Cargar listas desde storage al montar
+    // Load lists from storage when mounting
     useEffect(() => {
         (async () => {
             const morseArr = (await storageService.get<any[]>('morse_wallets')) || [];
@@ -59,53 +60,111 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
         try {
             const input = morseInput.trim();
 
-            // Intentar varias técnicas de normalización para el JSON
+            // Check if input is a private key (128 hex characters)
+            const privateKeyRegex = /^[0-9a-fA-F]{128}$/i;
+            if (privateKeyRegex.test(input)) {
+                console.log("Detected Morse private key format");
+
+                try {
+                    // Single private key import
+                    const result = await morseWalletService.importFromPrivateKey(input);
+                    if (!result) {
+                        throw new Error('Failed to import Morse wallet from private key');
+                    }
+
+                    // Import via provided callback
+                    await onWalletImport(result.serialized, morsePassword.trim() || 'default', 'morse');
+                    console.log(`✅ Morse wallet imported from private key: ${result.address}`);
+
+                    // Cleanup
+                    setMorseInput('');
+                    setMorseError('');
+                    return;
+                } catch (pkError: any) {
+                    console.error("Error importing private key:", pkError);
+                    throw new Error(`Failed to import private key: ${pkError.message}`);
+                }
+            }
+
+            // Check if input is an array of private keys
+            try {
+                const parsedArray = JSON.parse(input);
+                if (Array.isArray(parsedArray) && parsedArray.length > 0 &&
+                    parsedArray.every(key => typeof key === 'string' && privateKeyRegex.test(key))) {
+                    console.log(`Detected array of ${parsedArray.length} Morse private keys`);
+
+                    try {
+                        // Import multiple private keys
+                        const results = await morseWalletService.importFromPrivateKeys(parsedArray);
+                        if (results.length === 0) {
+                            throw new Error('Failed to import any Morse wallets from private keys');
+                        }
+
+                        // Import via provided callback (just the first one)
+                        await onWalletImport(results[0].serialized, morsePassword.trim() || 'default', 'morse');
+                        console.log(`✅ Imported ${results.length} Morse wallets from private keys`);
+
+                        // Cleanup
+                        setMorseInput('');
+                        setMorseError('');
+                        return;
+                    } catch (arrayError: any) {
+                        console.error("Error importing private key array:", arrayError);
+                        throw new Error(`Failed to import private keys array: ${arrayError.message}`);
+                    }
+                }
+            } catch (e) {
+                // Not a valid JSON array, continue with other formats
+                console.log("Not a valid JSON array of private keys, trying other formats");
+            }
+
+            // Try various normalization techniques for JSON
             let normalizedInput = input;
             let jsonData = null;
 
-            // Técnica 1: Intentar parsear directamente
+            // Technique 1: Try to parse directly
             try {
                 jsonData = JSON.parse(normalizedInput);
-                console.log("JSON parseado directamente con éxito");
+                console.log("JSON parsed directly with success");
             } catch (e) {
-                console.log("Error al parsear JSON directamente:", e);
+                console.log("Error parsing JSON directly:", e);
 
-                // Técnica 2: Reemplazar comillas escapadas
+                // Technique 2: Replace escaped quotes
                 try {
                     normalizedInput = input.replace(/\\"/g, '"');
                     jsonData = JSON.parse(normalizedInput);
-                    console.log("JSON parseado después de reemplazar comillas escapadas");
+                    console.log("JSON parsed after replacing escaped quotes");
                 } catch (e2) {
-                    console.log("Error después de reemplazar comillas escapadas:", e2);
+                    console.log("Error after replacing escaped quotes:", e2);
 
-                    // Técnica 3: Evaluar como objeto JavaScript (con precaución)
+                    // Technique 3: Evaluate as JavaScript object (with caution)
                     try {
-                        // Reemplazar comillas simples por dobles si es necesario
+                        // Replace single quotes with double quotes if necessary
                         normalizedInput = input.replace(/'/g, '"');
                         jsonData = JSON.parse(normalizedInput);
-                        console.log("JSON parseado después de reemplazar comillas simples");
+                        console.log("JSON parsed after replacing single quotes");
                     } catch (e3) {
-                        console.log("Error después de reemplazar comillas simples:", e3);
+                        console.log("Error after replacing single quotes:", e3);
 
-                        // Técnica 4: Intentar limpiar espacios y formateo extraño
+                        // Technique 4: Try to clean spaces and strange formatting
                         try {
-                            // Eliminar espacios en blanco extras y saltos de línea
+                            // Remove extra white spaces and line breaks
                             normalizedInput = input.replace(/\s+/g, ' ').trim();
 
-                            // Si comienza con { pero no termina con }, añadir el cierre
+                            // If it starts with { but doesn't end with }, add the closing
                             if (normalizedInput.startsWith('{') && !normalizedInput.endsWith('}')) {
                                 normalizedInput += '}';
                             }
 
                             jsonData = JSON.parse(normalizedInput);
-                            console.log("JSON parseado después de limpiar espacios");
+                            console.log("JSON parsed after cleaning spaces");
                         } catch (e4) {
-                            console.log("Error después de limpiar espacios:", e4);
+                            console.log("Error after cleaning spaces:", e4);
 
-                            // Último intento: Tratar de reconstruir el JSON manualmente
+                            // Last attempt: Try to reconstruct the JSON manually
                             if (input.includes('"name"') && input.includes('"addr"')) {
                                 try {
-                                    // Extraer valores clave usando expresiones regulares
+                                    // Extract key values using regular expressions
                                     const nameMatch = input.match(/"name"\s*:\s*"([^"]+)"/);
                                     const addrMatch = input.match(/"addr"\s*:\s*"([^"]+)"/);
                                     const privMatch = input.match(/"priv"\s*:\s*"([^"]+)"/);
@@ -118,10 +177,16 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                         };
 
                                         jsonData = manualJson;
-                                        console.log("JSON reconstruido manualmente:", jsonData);
+                                        console.log("JSON reconstructed manually:", jsonData);
                                     }
                                 } catch (e5) {
-                                    console.log("Error al reconstruir manualmente:", e5);
+                                    console.log("Error reconstructing manually:", e5);
+                                }
+                            } else {
+                                // Last resort: if it's a hex string but not 128 chars, it might still be a private key
+                                // with incorrect length, so we provide a more helpful error
+                                if (/^[0-9a-fA-F]+$/i.test(input) && input.length !== 128) {
+                                    throw new Error(`Invalid private key format. Expected 128 hex characters, got ${input.length}.`);
                                 }
                             }
                         }
@@ -133,20 +198,20 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 throw new Error("No se pudo procesar el formato JSON. Verifica que sea un JSON válido.");
             }
 
-            // Convertir a array si es un objeto único
+            // Convert to array if it's a single object
             const walletArray = Array.isArray(jsonData) ? jsonData : [jsonData];
 
-            // Procesar cada wallet en el array
+            // Process each wallet in the array
             for (const wallet of walletArray) {
-                // Validar que tenga al menos el campo addr
+                // Validate that it has at least the addr field
                 if (!wallet.addr || typeof wallet.addr !== 'string') {
                     throw new Error('Invalid Morse JSON: missing addr field');
                 }
 
-                // Asegurarse de que addr tenga el formato correcto
+                // Make sure addr has the correct format
                 if (!/^[0-9a-fA-F]{40}$/i.test(wallet.addr)) {
                     console.warn(`Wallet addr format may be invalid: ${wallet.addr}`);
-                    // Continuar de todos modos
+                    // Continue anyway
                 }
 
                 const serialized = JSON.stringify(wallet);
@@ -192,6 +257,8 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 setMorseError('Invalid JSON format. Check your input format.');
             } else if (error.message?.includes('addr')) {
                 setMorseError('Missing or invalid addr field in JSON');
+            } else if (error.message?.includes('private key')) {
+                setMorseError(error.message);
             } else {
                 setMorseError(error.message || 'Error importing Morse wallet');
             }
@@ -209,10 +276,10 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
         try {
             setLoading(true);
-            // 1) Importar en WalletService
+            // 1) Import in WalletService
             await onWalletImport(shannonInput, shannonPassword, 'shannon');
 
-            // 2) Guardar en storage
+            // 2) Save in storage
             const existing: any[] = (await storageService.get<any[]>('shannon_wallets')) || [];
             let parsed: any = null;
             try { parsed = JSON.parse(shannonInput.trim()); } catch { }
@@ -478,7 +545,13 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 }
 
 // Or array of wallets:
-[{ ... }, { ... }]'
+[{ ... }, { ... }]
+
+// Or direct private key (128 hex characters):
+1a823613033c5afc60d0db0ce2bc55c27ccde858df069cd9e8dbfeb4535ea1bb8c97bdf18bb09c78dc848dee83e7abd8aa93fe5bec119cec40a7f543ce018941
+
+// Or array of private keys:
+["1a823613033c5afc60d0db0ce2bc55c27ccde858df069cd9e8dbfeb4535ea1bb8c97bdf18bb09c78dc848dee83e7abd8aa93fe5bec119cec40a7f543ce018941", "..."]'
                                                 className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300 resize-none min-h-[120px] text-sm font-mono"
                                                 value={morseInput}
                                                 onChange={(e) => setMorseInput(e.target.value)}

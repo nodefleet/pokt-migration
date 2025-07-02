@@ -77,13 +77,13 @@ type SerializedWalletParams = {
 };
 
 /**
- * Función para detectar automáticamente si una wallet serializada es mainnet o testnet
- * RESPETA LA CONFIGURACIÓN GUARDADA EN LUGAR DE USAR EL PREFIJO
+ * Function to automatically detect if a serialized wallet is mainnet or testnet
+ * RESPECTS THE SAVED CONFIGURATION GUARDED IN PLACE OF USING THE PREFIX
  */
 async function detectAndDeserializeWallet(serialization: string, password: string): Promise<{ wallet: DirectSecp256k1HdWallet, address: string, isMainnet: boolean }> {
     console.log('🔍 Detecting Shannon wallet network...');
 
-    // PRIMERO: Respetar la configuración guardada del usuario
+    // FIRST: Respect the user's saved configuration
     const savedIsMainnet = await storageService.get<boolean>('isMainnet');
     if (savedIsMainnet !== null && savedIsMainnet !== undefined) {
         console.log('🎯 RESPECTING saved isMainnet configuration:', savedIsMainnet);
@@ -102,7 +102,7 @@ async function detectAndDeserializeWallet(serialization: string, password: strin
         }
     }
 
-    // SOLO si no hay configuración guardada, intentar detección (pero defaultear a testnet)
+    // ONLY if there is no saved configuration, try detection (but default to testnet)
     console.log('🔧 No saved config found, attempting deserialization with TESTNET default...');
 
     try {
@@ -111,7 +111,7 @@ async function detectAndDeserializeWallet(serialization: string, password: strin
 
         if (account) {
             console.log('✅ Wallet deserialized with TESTNET default:', account.address);
-            // Guardar configuración por defecto
+            // Save default configuration
             await storageService.set('isMainnet', false);
             return { wallet, address: account.address, isMainnet: false };
         }
@@ -123,7 +123,7 @@ async function detectAndDeserializeWallet(serialization: string, password: strin
 }
 
 /**
- * Función para importar wallet desde mnemónico respetando configuración guardada
+ * Function to import wallet from mnemonic respecting saved configuration
  */
 async function importFromMnemonic(mnemonic: string, password: string): Promise<{ wallet: DirectSecp256k1HdWallet, address: string, isMainnet: boolean }> {
     console.log('🔍 Importing Shannon wallet from mnemonic...');
@@ -134,7 +134,7 @@ async function importFromMnemonic(mnemonic: string, password: string): Promise<{
         throw new Error(`Mnemonic phrase must have exactly 12 or 24 words. Currently has ${words.length} words.`);
     }
 
-    // PRIMERO: Respetar la configuración guardada del usuario
+    // FIRST: Respect the user's saved configuration
     const savedIsMainnet = await storageService.get<boolean>('isMainnet');
     if (savedIsMainnet !== null && savedIsMainnet !== undefined) {
         console.log('🎯 RESPECTING saved isMainnet configuration for mnemonic:', savedIsMainnet);
@@ -153,7 +153,7 @@ async function importFromMnemonic(mnemonic: string, password: string): Promise<{
         }
     }
 
-    // SOLO si no hay configuración guardada, usar TESTNET por defecto
+    // ONLY if there is no saved configuration, use TESTNET by default
     console.log('🔧 No saved config found, using TESTNET default for mnemonic...');
 
     try {
@@ -164,7 +164,7 @@ async function importFromMnemonic(mnemonic: string, password: string): Promise<{
 
         if (account) {
             console.log('✅ Mnemonic wallet created with TESTNET default:', account.address);
-            // Guardar configuración por defecto
+            // Save default configuration
             await storageService.set('isMainnet', false);
             return { wallet, address: account.address, isMainnet: false };
         }
@@ -210,11 +210,11 @@ export const useCreateWallet = (): UseMutationResult<{ address: string; serializ
                 const address = await getAddress(wallet);
                 console.log("Address obtained:", address);
 
-                // Actualizar el estado global
+                // Update global state
                 setWallet({ address, serialized: serializedWallet });
                 console.log("Wallet saved in store");
 
-                // Guardar en localStorage también para persistencia
+                // Also save in localStorage for persistence
                 await storageService.set('shannon_wallet', {
                     serialized: serializedWallet,
                     network: 'shannon',
@@ -270,8 +270,8 @@ export class ShannonWallet {
 
     constructor(networkMode: 'MAINNET' | 'TESTNET' = 'TESTNET') {
         this.networkMode = networkMode;
-        // No llamar initializeClient en el constructor para evitar bloqueo durante importación
-        // Se inicializará cuando sea necesario
+        // Don't call initializeClient in the constructor to avoid blocking during import
+        // It will be initialized when needed
     }
 
     private async initializeClient() {
@@ -298,31 +298,31 @@ export class ShannonWallet {
             }
         }
 
-        // Si llegamos aquí, no pudimos conectar a ningún RPC
+        // If we get here, we couldn't connect to any RPC
         console.warn(`Could not connect to SHANNON network.`);
         this.isOfflineMode = true;
         throw new Error('Could not connect to the network. Please check your internet connection and try again. - Will operate in offline mode. Try with another CORS proxy or later.');
     }
 
     async importWallet(mnemonic: string): Promise<string> {
-        // Normalizar la frase mnemónica
+        // Normalize the mnemonic phrase
         const normalizedMnemonic = mnemonic.trim().toLowerCase();
 
-        // Verificar que la frase tenga 12 o 24 palabras
+        // Verify that the phrase has 12 or 24 words
         const words = normalizedMnemonic.split(/\s+/);
         if (words.length !== 12 && words.length !== 24) {
             throw new Error(`Mnemonic phrase must have exactly 12 or 24 words. Has ${words.length} words.`);
         }
 
-        // FORZAR MAINNET con prefijo "pokt"
+        // FORCE MAINNET with prefix "pokt"
         console.log('🔵 ShannonWallet.importWallet - FORZANDO prefijo MAINNET "pokt"');
-        const prefix = "pokt"; // FORZAR SIEMPRE prefijo de mainnet
+        const prefix = "pokt"; // ALWAYS FORCE mainnet prefix
 
         this.wallet = await DirectSecp256k1HdWallet.fromMnemonic(normalizedMnemonic, {
-            prefix: prefix // Usar prefijo mainnet forzado
+            prefix: prefix // Use forced mainnet prefix
         });
 
-        // Obtener la dirección (no requiere conexión de red)
+        // Get the address (doesn't require network connection)
         const [account] = await this.wallet.getAccounts();
         if (!account) {
             throw new Error("Could not obtain wallet account");
@@ -330,7 +330,7 @@ export class ShannonWallet {
 
         console.log(`✅ Shannon wallet importada con prefijo MAINNET: ${account.address}`);
 
-        // Intentar inicializar el cliente, pero no fallar si no puede conectar
+        // Try to initialize the client, but don't fail if it can't connect
         if (!this.client && !this.isOfflineMode) {
             try {
                 await this.initializeClient();
@@ -387,11 +387,11 @@ export class ShannonWallet {
         try {
             console.log(`📡 Searching transactions on Shannon ${this.networkMode} network...`);
 
-            // Buscar transacciones enviadas
+            // Search for sent transactions
             const sentTxs = await this.client!.searchTx(`message.sender='${address}'`);
             console.log(`📤 Found ${sentTxs.length} sent transactions`);
 
-            // Buscar transacciones recibidas
+            // Search for received transactions
             const receivedTxs = await this.client!.searchTx(`transfer.recipient='${address}'`);
             console.log(`📥 Found ${receivedTxs.length} received transactions`);
 
@@ -422,10 +422,10 @@ export class ShannonWallet {
                     code: tx.code
                 });
 
-                // Decodificar la transacción primero
+                // Decode the transaction first
                 const decodedTx = Tx.decode(tx.tx);
 
-                // Verificar si tiene la estructura básica esperada
+                // Verify if it has the expected basic structure
                 if (!decodedTx.body || !decodedTx.body.messages || decodedTx.body.messages.length === 0) {
                     console.warn(`⚠️ Transaction ${tx.hash} has invalid structure:`, {
                         hasBody: !!decodedTx.body,
@@ -435,20 +435,20 @@ export class ShannonWallet {
                     continue;
                 }
 
-                // Obtener el primer mensaje
+                // Get the first message
                 const firstMessage = decodedTx.body.messages[0];
                 console.log(`📨 First message structure:`, {
                     typeUrl: firstMessage.typeUrl,
                     hasValue: !!firstMessage.value
                 });
 
-                // Verificar que sea un MsgSend
+                // Verify that it's a MsgSend
                 if (firstMessage.typeUrl !== "/cosmos.bank.v1beta1.MsgSend") {
                     console.log(`ℹ️ Skipping non-send transaction type: ${firstMessage.typeUrl}`);
                     continue;
                 }
 
-                // Decodificar el mensaje
+                // Decode the message
                 const decodedMessage = MsgSend.decode(firstMessage.value);
                 console.log(`🔓 Decoded message:`, {
                     fromAddress: decodedMessage.fromAddress,
@@ -456,7 +456,7 @@ export class ShannonWallet {
                     amount: decodedMessage.amount
                 });
 
-                // Verificar que tiene los campos necesarios
+                // Verify that it has the necessary fields
                 if (!decodedMessage.fromAddress || !decodedMessage.toAddress || !decodedMessage.amount) {
                     console.warn(`⚠️ Transaction ${tx.hash} missing required fields:`, {
                         hasFromAddress: !!decodedMessage.fromAddress,
@@ -466,7 +466,7 @@ export class ShannonWallet {
                     continue;
                 }
 
-                // Buscar el amount en upokt
+                // Look for the amount in upokt
                 let amount = null;
                 for (const coin of decodedMessage.amount) {
                     if (coin.denom === "upokt") {
@@ -480,7 +480,7 @@ export class ShannonWallet {
                     continue;
                 }
 
-                // Determinar el tipo de transacción
+                // Determine the transaction type
                 const isSent = decodedMessage.fromAddress === address;
                 const status: 'pending' | 'confirmed' | 'failed' = tx.code === 0 ? 'confirmed' : 'failed';
                 const type: 'send' | 'recv' = isSent ? 'send' : 'recv';
@@ -502,7 +502,7 @@ export class ShannonWallet {
             } catch (error) {
                 console.error(`❌ Error decoding transaction ${i + 1} (${tx.hash}):`, error);
                 console.error(`📋 Transaction structure:`, tx);
-                // Continuar con la siguiente transacción en lugar de fallar
+                // Continue with the next transaction instead of failing
                 continue;
             }
         }

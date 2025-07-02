@@ -1,108 +1,108 @@
 /**
- * SERVICIO DE ALMACENAMIENTO SIMPLE Y DIRECTO
- * Utiliza únicamente localStorage para garantizar persistencia
- * con capa de memoria para acceso inmediato
+ * SIMPLE AND DIRECT STORAGE SERVICE
+ * Uses only localStorage to ensure persistence
+ * with memory layer for immediate access
  */
 class StorageService {
-  private _debug = true; // Modo debug para diagnósticos
+  private _debug = true; // Debug mode for diagnostics
 
-  // Memoria caché para acceso inmediato
+  // Cache memory for immediate access
   public memoryStorage: Record<string, string> = {};
 
-  // Prefijo para todas las claves en localStorage
+  // Prefix for all keys in localStorage
   private readonly STORAGE_PREFIX = "moopri_";
 
   constructor() {
-    this._logDebug("🚀 Inicializando StorageService DIRECTO con localStorage");
+    this._logDebug("🚀 Initializing DIRECT StorageService with localStorage");
 
-    // Limpiar datos inválidos
+    // Clean invalid data
     this._cleanInvalidData();
 
-    // Cargar datos desde localStorage al iniciar
+    // Load data from localStorage at startup
     this._loadFromLocalStorage();
 
-    // Comprobar que localStorage funciona correctamente
+    // Check that localStorage works correctly
     this._testLocalStorage();
 
-    // Configurar evento de storage para sincronización entre pestañas
+    // Set up storage event for synchronization between tabs
     window.addEventListener("storage", this._handleStorageEvent);
 
-    // Configurar listener para sincronizar antes de cerrar la página
+    // Set up listener to synchronize before closing the page
     window.addEventListener("beforeunload", () => {
       this._syncToLocalStorage();
     });
 
-    // Disparar evento personalizado para notificar que el almacenamiento está listo
+    // Trigger custom event to notify that storage is ready
     window.dispatchEvent(new CustomEvent("storage_ready"));
   }
 
   /**
-   * Limpia datos corruptos o inválidos
+   * Cleans corrupt or invalid data
    */
   private _cleanInvalidData(): void {
     try {
-      // Limpiar datos potencialmente corruptos (que contienen [object Object])
+      // Clean potentially corrupt data (containing [object Object])
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith(this.STORAGE_PREFIX)) {
           const value = localStorage.getItem(key);
           if (value === "[object Object]" || value?.includes("object Object")) {
-            this._logDebug(`🧹 Limpiando dato corrupto en [${key}]: ${value}`);
+            this._logDebug(`🧹 Cleaning corrupt data in [${key}]: ${value}`);
             localStorage.removeItem(key);
           } else if (value && (key.endsWith("_data") || key.includes("user"))) {
-            // Verificar que los datos JSON son válidos
+            // Verify that JSON data is valid
             try {
               if (value.startsWith("{") || value.startsWith("[")) {
                 JSON.parse(value);
               }
             } catch (e) {
-              this._logDebug(`🧹 Limpiando dato JSON inválido en [${key}]`);
+              this._logDebug(`🧹 Cleaning invalid JSON data in [${key}]`);
               localStorage.removeItem(key);
             }
           }
         }
       }
     } catch (error) {
-      this._logDebug(`❌ Error al limpiar datos inválidos: ${error}`);
+      this._logDebug(`❌ Error cleaning invalid data: ${error}`);
     }
   }
 
   /**
-   * Verifica que localStorage funciona correctamente
+   * Verifies that localStorage works correctly
    */
   private _testLocalStorage(): void {
     try {
       const testKey = `${this.STORAGE_PREFIX}__test__`;
       const testValue = `test_${Date.now()}`;
 
-      // Probar escritura
+      // Test write
       localStorage.setItem(testKey, testValue);
 
-      // Probar lectura
+      // Test read
       const readValue = localStorage.getItem(testKey);
 
-      // Verificar que coincidan
+      // Verify they match
       if (readValue === testValue) {
-        this._logDebug("✓ localStorage funciona correctamente");
+        this._logDebug("✓ localStorage works correctly");
       } else {
         this._logDebug(
-          `⚠️ localStorage no devolvió el valor correcto: esperado=${testValue}, recibido=${readValue}`
+          `⚠️ localStorage did not return the correct value: expected=${testValue}, received=${readValue}`
         );
       }
 
-      // Limpiar
+      // Clean up
       localStorage.removeItem(testKey);
     } catch (error) {
-      this._logDebug(`❌ Error verificando localStorage: ${error}`);
+      this._logDebug(`❌ Error verifying localStorage: ${error}`);
     }
   }
 
   /**
-   * Carga todos los datos de localStorage a memoria
+   * Loads all data from localStorage to memory
    */
   private _loadFromLocalStorage(): void {
     try {
-      this._logDebug("🔄 Cargando datos desde localStorage a memoria...");
+      this._logDebug("🔄 Loading data from localStorage to memory...");
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
         if (key && key.startsWith(this.STORAGE_PREFIX)) {
@@ -110,52 +110,52 @@ class StorageService {
           const value = localStorage.getItem(key);
           if (value !== null) {
             this.memoryStorage[actualKey] = value;
-            this._logDebug(`✓ Cargado [${actualKey}] desde localStorage`);
+            this._logDebug(`✓ Loaded [${actualKey}] from localStorage`);
           }
         }
       }
-      this._logDebug("✅ Datos cargados desde localStorage");
+      this._logDebug("✅ Data loaded from localStorage");
     } catch (error) {
-      this._logDebug("❌ Error al cargar datos desde localStorage: " + error);
+      this._logDebug("❌ Error loading data from localStorage: " + error);
     }
   }
 
   /**
- * Sincroniza datos desde memoria a localStorage
+ * Synchronizes data from memory to localStorage
  */
   private _syncToLocalStorage(): void {
     try {
-      this._logDebug("🔄 Sincronizando memoria a localStorage...");
+      this._logDebug("🔄 Synchronizing memory to localStorage...");
       for (const key of Object.keys(this.memoryStorage)) {
         const value = this.memoryStorage[key];
         if (value !== undefined) {
           localStorage.setItem(`${this.STORAGE_PREFIX}${key}`, value);
         }
       }
-      this._logDebug("✓ Datos sincronizados a localStorage");
+      this._logDebug("✓ Data synchronized to localStorage");
     } catch (error) {
-      this._logDebug("❌ Error al sincronizar a localStorage: " + error);
+      this._logDebug("❌ Error synchronizing to localStorage: " + error);
     }
   }
 
   /**
-   * Maneja eventos de cambio en localStorage (para sincronización entre pestañas)
+   * Handles localStorage change events (for synchronization between tabs)
    */
   private _handleStorageEvent = (event: StorageEvent): void => {
     if (event.key && event.key.startsWith(this.STORAGE_PREFIX)) {
       const actualKey = event.key.substring(this.STORAGE_PREFIX.length);
 
       if (event.newValue !== null) {
-        // Actualizar memoria
+        // Update memory
         this.memoryStorage[actualKey] = event.newValue;
-        this._logDebug(`✓ Actualizado [${actualKey}] desde otra pestaña`);
+        this._logDebug(`✓ Updated [${actualKey}] from another tab`);
       } else {
-        // Eliminar de memoria
+        // Remove from memory
         delete this.memoryStorage[actualKey];
-        this._logDebug(`✓ Eliminado [${actualKey}] desde otra pestaña`);
+        this._logDebug(`✓ Removed [${actualKey}] from another tab`);
       }
 
-      // Notificar a la aplicación del cambio
+      // Notify the application of the change
       window.dispatchEvent(
         new CustomEvent("storage_updated", {
           detail: { key: actualKey, value: event.newValue },
@@ -165,26 +165,26 @@ class StorageService {
   };
 
   /**
-   * Desarializa de manera segura un valor almacenado
+   * Safely deserializes a stored value
    */
   private _deserializeValue<T>(value: any): T | null {
-    // Si ya es un objeto o null, devolverlo directamente
+    // If it's already an object or null, return it directly
     if (value === null || value === undefined) {
       return null;
     }
 
-    // Si es un objeto (no string), devolverlo directamente
+    // If it's an object (not string), return it directly
     if (typeof value !== "string") {
       return value as T;
     }
 
-    // Si es "[object Object]", devolver un objeto vacío
+    // If it's "[object Object]", return an empty object
     if (value === "[object Object]") {
       return {} as T;
     }
 
     try {
-      // Si es un objeto JSON válido, parsearlo
+      // If it's a valid JSON object, parse it
       if (
         (value.startsWith("{") && value.endsWith("}")) ||
         (value.startsWith("[") && value.endsWith("]"))
@@ -192,12 +192,12 @@ class StorageService {
         return JSON.parse(value) as T;
       }
 
-      // De lo contrario, devolver como está
+      // Otherwise, return as is
       return value as unknown as T;
     } catch (error) {
-      this._logDebug(`⚠️ Error deserializando valor: ${error}`);
+      this._logDebug(`⚠️ Error deserializing value: ${error}`);
 
-      // Evitar devolver valores inválidos
+      // Avoid returning invalid values
       if (value.includes("object Object") || value === "") {
         return null;
       }
@@ -207,14 +207,14 @@ class StorageService {
   }
 
   /**
- * Serializa correctamente un valor para almacenamiento
+ * Correctly serializes a value for storage
  */
   private _serializeValue(value: any): string {
     if (value === undefined || value === null) {
       return "";
     }
 
-    // Si ya es string, devolver directamente (a menos que sea [object Object])
+    // If it's already a string, return directly (unless it's [object Object])
     if (typeof value === "string") {
       if (value === "[object Object]") {
         return "{}";
@@ -225,65 +225,65 @@ class StorageService {
     try {
       return JSON.stringify(value);
     } catch (error) {
-      this._logDebug(`⚠️ Error serializando valor: ${error}`);
-      // Convertir a string seguro para prevenir [object Object]
+      this._logDebug(`⚠️ Error serializing value: ${error}`);
+      // Convert to safe string to prevent [object Object]
       return typeof value === "object" ? "{}" : String(value);
     }
   }
 
   /**
-   * Guarda un valor en memoria y localStorage
+   * Saves a value in memory and localStorage
    */
   async set(key: string, value: any): Promise<boolean> {
     try {
-      // Serializar el valor correctamente
+      // Serialize the value correctly
       const stringValue = this._serializeValue(value);
 
-      // No guardar valores vacíos o inválidos
+      // Don't save empty or invalid values
       if (!stringValue) {
         this._logDebug(
-          `⚠️ Intentando guardar valor vacío o inválido para [${key}]`
+          `⚠️ Attempting to save empty or invalid value for [${key}]`
         );
         return false;
       }
 
-      // 1. Guardar en memoria inmediatamente (acceso más rápido)
+      // 1. Save in memory immediately (faster access)
       this.memoryStorage[key] = stringValue;
 
-      // 2. Guardar en localStorage
+      // 2. Save in localStorage
       localStorage.setItem(`${this.STORAGE_PREFIX}${key}`, stringValue);
 
-      // 3. Verificar que el valor se guardó correctamente
+      // 3. Verify that the value was saved correctly
       const verificationValue = localStorage.getItem(
         `${this.STORAGE_PREFIX}${key}`
       );
       if (verificationValue !== stringValue) {
         this._logDebug(
-          `⚠️ Verificación fallida para [${key}] - Esperado: ${stringValue}, Recibido: ${verificationValue}`
+          `⚠️ Verification failed for [${key}] - Expected: ${stringValue}, Received: ${verificationValue}`
         );
         return false;
       }
 
-      // 4. Notificar a la aplicación del cambio
+      // 4. Notify the application of the change
       window.dispatchEvent(
         new CustomEvent("storage_updated", {
           detail: { key, value: stringValue },
         })
       );
 
-      this._logDebug(`✅ Guardado [${key}] en memoria y localStorage`);
+      this._logDebug(`✅ Saved [${key}] in memory and localStorage`);
       return true;
     } catch (error) {
-      this._logDebug(`❌ Error al guardar [${key}]: ${error}`);
+      this._logDebug(`❌ Error saving [${key}]: ${error}`);
       return false;
     }
   }
 
   /**
-   * Obtiene un valor del almacenamiento (primero memoria, luego localStorage)
+   * Gets a value from storage (first memory, then localStorage)
    */
   async get<T>(key: string, defaultValue?: T): Promise<T | null | undefined> {
-    // 1. Intentar obtener de memoria primero (inmediato)
+    // 1. Try to get from memory first (immediate)
     const memValue = this.memoryStorage[key];
     if (memValue !== undefined) {
       const deserializedValue = this._deserializeValue<T>(memValue);
@@ -292,11 +292,11 @@ class StorageService {
       }
     }
 
-    // 2. Intentar obtener de localStorage
+    // 2. Try to get from localStorage
     try {
       const value = localStorage.getItem(`${this.STORAGE_PREFIX}${key}`);
       if (value !== null) {
-        // Guardar en memoria para acceso futuro
+        // Save in memory for future access
         this.memoryStorage[key] = value;
 
         const deserializedValue = this._deserializeValue<T>(value);
@@ -305,18 +305,18 @@ class StorageService {
         }
       }
     } catch (error) {
-      this._logDebug(`❌ Error al leer [${key}] de localStorage: ${error}`);
+      this._logDebug(`❌ Error reading [${key}] from localStorage: ${error}`);
     }
 
-    // 3. Devolver valor por defecto si no se encuentra
+    // 3. Return default value if not found
     return defaultValue ?? null;
   }
 
   /**
-   * Obtiene un valor sincrónicamente (solo de memoria y localStorage)
+   * Gets a value synchronously (only from memory and localStorage)
    */
   getSync<T>(key: string, defaultValue?: T): T | null | undefined {
-    // 1. Intentar obtener de memoria primero
+    // 1. Try to get from memory first
     const memValue = this.memoryStorage[key];
     if (memValue !== undefined) {
       const deserializedValue = this._deserializeValue<T>(memValue);
@@ -325,11 +325,11 @@ class StorageService {
       }
     }
 
-    // 2. Intentar obtener de localStorage
+    // 2. Try to get from localStorage
     try {
       const value = localStorage.getItem(`${this.STORAGE_PREFIX}${key}`);
       if (value !== null) {
-        // Guardar en memoria para acceso futuro
+        // Save in memory for future access
         this.memoryStorage[key] = value;
 
         const deserializedValue = this._deserializeValue<T>(value);
@@ -338,45 +338,45 @@ class StorageService {
         }
       }
     } catch (error) {
-      this._logDebug(`❌ Error al leer [${key}] de localStorage: ${error}`);
+      this._logDebug(`❌ Error reading [${key}] from localStorage: ${error}`);
     }
 
     return defaultValue ?? null;
   }
 
   /**
-   * Elimina un valor de memoria y localStorage
+   * Removes a value from memory and localStorage
      */
   async remove(key: string): Promise<void> {
     try {
-      // 1. Eliminar de memoria
+      // 1. Remove from memory
       delete this.memoryStorage[key];
 
-      // 2. Eliminar de localStorage
+      // 2. Remove from localStorage
       localStorage.removeItem(`${this.STORAGE_PREFIX}${key}`);
 
-      // 3. Notificar a la aplicación del cambio
+      // 3. Notify the application of the change
       window.dispatchEvent(
         new CustomEvent("storage_updated", {
           detail: { key, value: null },
         })
       );
 
-      this._logDebug(`✓ Eliminado [${key}] de memoria y localStorage`);
+      this._logDebug(`✓ Removed [${key}] from memory and localStorage`);
     } catch (error) {
-      this._logDebug(`❌ Error al eliminar [${key}]: ${error}`);
+      this._logDebug(`❌ Error removing [${key}]: ${error}`);
     }
   }
 
   /**
- * Limpia todo el almacenamiento
+ * Clears all storage
    */
   async clear(): Promise<void> {
     try {
-      // 1. Limpiar memoria
+      // 1. Clear memory
       this.memoryStorage = {};
 
-      // 2. Limpiar localStorage (solo las claves de moopri)
+      // 2. Clear localStorage (only moopri keys)
       for (let i = localStorage.length - 1; i >= 0; i--) {
         const key = localStorage.key(i);
         if (key && key.startsWith(this.STORAGE_PREFIX)) {
@@ -384,17 +384,17 @@ class StorageService {
         }
       }
 
-      // 3. Notificar a la aplicación del cambio
+      // 3. Notify the application of the change
       window.dispatchEvent(new CustomEvent("storage_cleared"));
 
-      this._logDebug("✓ Almacenamiento limpiado completamente");
+      this._logDebug("✓ Storage cleared completely");
     } catch (error) {
-      this._logDebug(`❌ Error al limpiar almacenamiento: ${error}`);
+      this._logDebug(`❌ Error clearing storage: ${error}`);
     }
   }
 
   /**
-   * Verifica el estado de autenticación
+   * Checks authentication status
    */
   async hasValidAuth(): Promise<boolean> {
     try {
@@ -402,13 +402,13 @@ class StorageService {
       const userId = this.getSync<string>("userId");
       return !!token && !!userId;
     } catch (error) {
-      this._logDebug("❌ Error verificando autenticación: " + error);
+      this._logDebug("❌ Error checking authentication: " + error);
       return false;
     }
   }
 
   /**
-   * Obtiene todas las claves almacenadas
+   * Gets all stored keys
    */
   async keys(): Promise<string[]> {
     try {
@@ -421,13 +421,13 @@ class StorageService {
       }
       return keys;
     } catch (error) {
-      this._logDebug("❌ Error al obtener claves: " + error);
+      this._logDebug("❌ Error getting keys: " + error);
       return [];
     }
   }
 
   /**
-   * Métodos de compatibilidad (equivalentes a los originales)
+   * Compatibility methods (equivalent to originals)
    */
   setMemory = this.set;
   removeMemory = this.remove;
@@ -443,34 +443,34 @@ class StorageService {
   }
 
   /**
-   * Reparar almacenamiento
+   * Repairs storage
    */
   async repair(): Promise<boolean> {
     try {
-      this._logDebug("🔧 Iniciando reparación de almacenamiento");
+      this._logDebug("🔧 Starting storage repair");
 
-      // 1. Limpiar datos inválidos
+      // 1. Clean invalid data
       this._cleanInvalidData();
 
-      // 2. Recargar datos válidos
+      // 2. Reload valid data
       this._loadFromLocalStorage();
 
       return await this.hasValidAuth();
     } catch (error) {
-      this._logDebug(`❌ Error en reparación: ${error}`);
+      this._logDebug(`❌ Error in repair: ${error}`);
       return false;
     }
   }
 
   /**
-   * Función auxiliar para logs en modo debug
+   * Helper function for debug logs
    */
   private _logDebug(message: string): void {
     if (this._debug) {
-     // console.log(`[Storage] ${message}`);
+      // console.log(`[Storage] ${message}`);
     }
   }
 }
 
-// Exportar una instancia única
+// Export a single instance
 export const storageService = new StorageService(); 

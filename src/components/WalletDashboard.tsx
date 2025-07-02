@@ -18,15 +18,15 @@ interface StoredWallet {
     parsed: any;
 }
 
-// Función para obtener transacciones directamente desde la API RPC de Shannon
+// Function to get transactions directly from Shannon's RPC API
 const fetchShannonTransactions = async (address: string): Promise<any[]> => {
     try {
         console.log('🔍 Fetching Shannon transactions directly from RPC API...');
 
-        // URL de la API RPC de Shannon
+        // Shannon RPC API URL
         const rpcUrl = 'https://shannon-grove-rpc.mainnet.poktroll.com/';
 
-        // Consulta para transacciones enviadas
+        // Query for sent transactions
         const sendQuery = {
             jsonrpc: '2.0',
             id: Math.floor(Math.random() * 1000000000),
@@ -34,7 +34,7 @@ const fetchShannonTransactions = async (address: string): Promise<any[]> => {
             params: [`message.sender='${address}'`, true, '1', '100', 'desc']
         };
 
-        // Consulta para transacciones recibidas
+        // Query for received transactions
         const receiveQuery = {
             jsonrpc: '2.0',
             id: Math.floor(Math.random() * 1000000000),
@@ -42,7 +42,7 @@ const fetchShannonTransactions = async (address: string): Promise<any[]> => {
             params: [`transfer.recipient='${address}'`, true, '1', '100', 'desc']
         };
 
-        // Realizar ambas consultas en paralelo
+        // Perform both queries in parallel
         const [sendResponse, receiveResponse] = await Promise.all([
             fetch(rpcUrl, {
                 method: 'POST',
@@ -56,15 +56,15 @@ const fetchShannonTransactions = async (address: string): Promise<any[]> => {
             })
         ]);
 
-        // Procesar las respuestas
+        // Process the responses
         const sendData = await sendResponse.json();
         const receiveData = await receiveResponse.json();
 
-        // Extraer las transacciones
+        // Extract the transactions
         const sentTxs = sendData.result?.txs || [];
         const receivedTxs = receiveData.result?.txs || [];
 
-        // Combinar todas las transacciones
+        // Combine all transactions
         const allTxs = [...sentTxs, ...receivedTxs];
 
         console.log(`✅ Found ${allTxs.length} Shannon transactions directly from RPC`);
@@ -85,7 +85,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     walletManager,
     onLogout
 }) => {
-    // Estado local para actualizar valores desde el walletManager
+    // Local state to update values from walletManager
     const [formattedBalanceValue, setFormattedBalanceValue] = useState<string>(formatBalance(balance));
     const [transactionsList, setTransactionsList] = useState<any[]>(initialTransactions);
     const [loading, setLoading] = useState<boolean>(false);
@@ -109,7 +109,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             setLoading(true);
             console.log(`🔄 Fetching balance and transactions for ${walletAddress} on ${network} (mainnet: ${isMainnet})`);
 
-            // Verificar si walletManager está definido antes de usarlo
+            // Check if walletManager is defined before using it
             if (!walletManager) {
                 console.warn('WalletManager no está inicializado. Esperando inicialización...');
                 setShowOfflineWarning(true);
@@ -117,22 +117,22 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 return;
             }
 
-            // Verificar si estamos en modo offline
+            // Check if we are in offline mode
             const isOffline = walletManager.isOfflineMode ? walletManager.isOfflineMode() : false;
             setShowOfflineWarning(isOffline);
 
-            // Obtener balance aunque estemos en modo offline (devolverá 0)
+            // Get balance even if we are in offline mode (will return 0)
             const fetchedBalance = await walletManager.getBalance(walletAddress);
             console.log(`💰 Fetched balance for ${walletAddress}: ${fetchedBalance}`);
             setFormattedBalanceValue(formatBalance(fetchedBalance));
 
-            // Intentar obtener transacciones solo si no estamos en modo offline
+            // Try to get transactions only if we are not in offline mode
             if (!isOffline) {
                 try {
-                    // Primero intentar con el método normal
+                    // First try with the normal method
                     const fetchedTransactions = await walletManager.getTransactions(walletAddress);
 
-                    // Si no hay transacciones y estamos en Shannon, intentar directamente con la API RPC
+                    // If there are no transactions and we are in Shannon, try directly with the RPC API
                     if (fetchedTransactions.length === 0 && network === 'shannon') {
                         console.log('No se encontraron transacciones con el método normal, intentando directamente con RPC...');
                         const directTransactions = await fetchShannonTransactions(walletAddress);
@@ -147,7 +147,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 } catch (txError) {
                     console.error('Error obteniendo transacciones con el método normal:', txError);
 
-                    // Si hay un error y estamos en Shannon, intentar directamente con la API RPC
+                    // If there is an error and we are in Shannon, try directly with the RPC API
                     if (network === 'shannon') {
                         console.log('Intentando obtener transacciones directamente con RPC debido a error...');
                         const directTransactions = await fetchShannonTransactions(walletAddress);
@@ -167,23 +167,23 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         }
     }, [walletManager, walletAddress, network, isMainnet]);
 
-    // Actualizar cuando cambian las props
+    // Update when props change
     useEffect(() => {
-        // Actualizar el balance formateado cuando cambia la prop balance
+        // Update the formatted balance when the balance prop changes
         setFormattedBalanceValue(formatBalance(balance));
         console.log('⚡ WalletDashboard: Balance prop updated:', balance);
     }, [balance]);
 
-    // Efecto para obtener balance y transacciones
+    // Effect to get balance and transactions
     useEffect(() => {
-        // Solo intentar obtener datos si tenemos una dirección válida
+        // Only try to get data if we have a valid address
         if (walletAddress) {
             console.log(`⚡ WalletDashboard: Wallet/network changed - fetching data for ${walletAddress} (${network})`);
             fetchBalanceAndTransactions();
         }
     }, [walletManager, walletAddress, network, isMainnet, fetchBalanceAndTransactions]);
 
-    // Cargar las wallets guardadas al iniciar
+    // Load saved wallets at startup
     useEffect(() => {
         const loadStoredWallets = async () => {
             try {
@@ -203,7 +203,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         loadStoredWallets();
     }, []);
 
-    // Escuchar cambios en el storage para actualizar automáticamente
+    // Listen for changes in storage to update automatically
     useEffect(() => {
         const handleStorageUpdate = () => {
             console.log('📦 Storage updated in WalletDashboard - refreshing data...');
@@ -214,13 +214,13 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             const { address, balance } = event.detail;
             console.log(`💰 WalletDashboard received wallet_data_updated event for ${address} with balance ${balance}`);
 
-            // Solo actualizar si es para nuestra wallet actual
+            // Only update if it's for our current wallet
             if (address === walletAddress) {
                 setFormattedBalanceValue(formatBalance(balance));
             }
         };
 
-        // Escuchar eventos customizados de storage
+        // Listen for custom storage events
         window.addEventListener('storageUpdate', handleStorageUpdate);
         window.addEventListener('wallet_data_updated', handleWalletDataUpdate as EventListener);
 
@@ -230,7 +230,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         };
     }, [fetchBalanceAndTransactions, walletAddress]);
 
-    // Función para intentar reconectar manualmente
+    // Function to try to reconnect manually
     const handleReconnect = async () => {
         try {
             if (!walletManager) {
@@ -240,8 +240,8 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             setLoading(true);
             setError(null);
 
-            // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
+            // FIX: WalletManager expects isTestnet, not isMainnet
+            const isTestnet = !isMainnet; // Negate directly - simpler and more reliable
             console.log(`🔍 DEBUG WalletDashboard handleReconnect: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
             await walletManager.switchNetwork(network, isTestnet);
@@ -254,7 +254,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         }
     };
 
-    // Función para cambiar a Shannon si estamos en Morse
+    // Function to switch to Shannon if we are in Morse
     const handleSwitchToShannon = async () => {
         try {
             if (!walletManager) {
@@ -264,8 +264,8 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             setLoading(true);
             setError(null);
 
-            // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
+            // FIX: WalletManager expects isTestnet, not isMainnet
+            const isTestnet = !isMainnet; // Negate directly - simpler and more reliable
             console.log(`🔍 DEBUG WalletDashboard handleSwitchToShannon: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
             await walletManager.switchNetwork('shannon', isTestnet);
@@ -278,7 +278,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         }
     };
 
-    // Cambiar de red y wallet
+    // Change network and wallet
     const handleNetworkSwitch = async (newNetwork: NetworkType) => {
         try {
             if (!walletManager) {
@@ -294,10 +294,10 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 throw new Error(`No hay wallet guardada para la red ${newNetwork}`);
             }
 
-            // Cambiar de red en el WalletManager
+            // Change network in WalletManager
             await walletManager.switchNetwork(newNetwork);
 
-            // Importar la wallet guardada
+            // Import the saved wallet
             await walletManager.importWallet(storedWallet.serialized, '');
 
             setLoading(false);
@@ -308,12 +308,12 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         }
     };
 
-    // Función para abrir el diálogo de migración
+    // Function to open the migration dialog
     const handleMigrationRequest = async () => {
         try {
             console.log('🔄 Opening migration dialog...');
 
-            // Obtener la clave privada de Morse
+            // Get Morse private key
             const privateKey = await morseWalletService.getMorsePrivateKey();
 
             if (!privateKey) {
@@ -329,7 +329,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         }
     };
 
-    // Función para cerrar el diálogo de migración
+    // Function to close the migration dialog
     const handleCloseMigrationDialog = () => {
         setShowMigrationDialog(false);
         setMorsePrivateKey(null);
@@ -358,7 +358,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
     const isMorseNetwork = network === 'morse';
 
-    // Solo mostrar acciones para Morse (botón Migrate) y Shannon (sin Swap)
+    // Only show actions for Morse (Migrate button) and Shannon (no Swap)
     const actions = isMorseNetwork ? [
         { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleMigrationRequest() },
         {
@@ -377,7 +377,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         }
     ];
 
-    // Determinar si debemos deshabilitar funciones debido al modo offline
+    // Determine if we should disable functions due to offline mode
     const isOffline = walletManager?.isOfflineMode ? walletManager.isOfflineMode() : false;
     const disableFeatures = isOffline && isMorseNetwork;
 

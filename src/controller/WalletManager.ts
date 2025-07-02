@@ -29,17 +29,17 @@ export class WalletManager {
     private connectionAttempts: number = 0;
     private maxConnectionAttempts: number = 3;
     private lastSuccessfulRpcUrl: string | null = null;
-    private isForcedOffline: boolean = false; // Para permitir operación offline
+    private isForcedOffline: boolean = false; // To allow offline operation
 
     constructor(networkType: NetworkType = 'shannon', isTestnet: boolean = true) {
         this.networkType = networkType;
-        this.networkMode = 'MAINNET'; // FORZAR MAINNET SIEMPRE
+        this.networkMode = 'MAINNET'; // ALWAYS FORCE MAINNET
 
-        // Mostrar warning para Morse
+        // Show warning for Morse
         if (networkType === 'morse') {
             console.warn(ERROR_MESSAGES.MORSE_DEPRECATED);
         } else if (networkType === 'shannon') {
-            // Inicializar ShannonWallet con la configuración correcta
+            // Initialize ShannonWallet with the correct configuration
             this.shannonWallet = new ShannonWallet(this.networkMode);
         }
 
@@ -47,11 +47,11 @@ export class WalletManager {
     }
 
     /**
-     * Intenta conectar al cliente usando múltiples endpoints RPC
+     * Attempts to connect to the client using multiple RPC endpoints
      * @returns {Promise<void>}
      */
     private async initializeClient(): Promise<void> {
-        // Si estamos en modo forzado offline, no intentar conectar
+        // If we are in forced offline mode, don't attempt to connect
         if (this.isForcedOffline) {
             console.warn("Operating in forced offline mode. Network connection will not be attempted.");
             return;
@@ -61,20 +61,20 @@ export class WalletManager {
         let lastError = null;
         this.connectionAttempts = 0;
 
-        // Intentar conectar a cada RPC URL hasta que uno funcione
+        // Try to connect to each RPC URL until one works
         for (const rpcUrl of network.rpcUrls) {
             try {
                 this.connectionAttempts++;
                 console.log(`Attempting to connect to: ${rpcUrl}`);
 
-                // Usar el último RPC exitoso primero si está disponible
+                // Use the last successful RPC first if available
                 const urlToUse = this.lastSuccessfulRpcUrl !== null ? this.lastSuccessfulRpcUrl : rpcUrl;
 
-                // Establecer timeout para la conexión
+                // Set timeout for the connection
                 const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout
+                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 seconds timeout
 
-                // Verificar si el error es de CORS y mostrar mensaje específico
+                // Check if the error is CORS and show specific message
                 if (lastError && lastError.toString().includes("CORS")) {
                     console.warn(ERROR_MESSAGES.CORS_ERROR);
                 }
@@ -85,25 +85,25 @@ export class WalletManager {
                 console.log(`Successful connection to: ${urlToUse}`);
                 this.lastSuccessfulRpcUrl = urlToUse;
 
-                // Si tenemos una wallet, también inicializar el signing client
+                // If we have a wallet, also initialize the signing client
                 if (this.wallet) {
                     this.signingClient = await SigningStargateClient.connectWithSigner(urlToUse, this.wallet);
                 }
 
-                return; // Si se conectó con éxito, terminar
+                return; // If successfully connected, terminate
             } catch (error) {
                 console.error(`Error connecting to ${rpcUrl}:`, error);
                 lastError = error;
-                // Continuar con el siguiente endpoint
+                // Continue with the next endpoint
             }
         }
 
-        // Activar modo offline para cualquier red después de agotar los intentos
+        // Activate offline mode for any network after exhausting attempts
         if (this.connectionAttempts >= this.maxConnectionAttempts) {
             console.error(`Could not connect to ${this.networkType.toUpperCase()} network.`);
-            this.isForcedOffline = true; // Permite operar en modo offline
+            this.isForcedOffline = true; // Allows operation in offline mode
 
-            // Mensaje específico para Morse debido a su estado de migración
+            // Specific message for Morse due to its migration status
             if (this.networkType === 'morse') {
                 throw new Error(`${ERROR_MESSAGES.NETWORK_CONNECTION_ERROR} - Morse network not available. Will operate in offline mode. Migration to Shannon is recommended.`);
             } else {
@@ -111,37 +111,37 @@ export class WalletManager {
             }
         }
 
-        // Si llegamos aquí, ningún endpoint funcionó
+        // If we get here, no endpoint worked
         console.error(ERROR_MESSAGES.NETWORK_CONNECTION_ERROR);
         throw new Error(ERROR_MESSAGES.NETWORK_CONNECTION_ERROR + (lastError ? `: ${lastError instanceof Error ? lastError.message : String(lastError)}` : ''));
     }
 
     /**
-     * Cambia entre testnet y mainnet
-     * @param networkType - 'shannon' o 'morse'
-     * @param isTestnet - true para usar testnet, false para mainnet
+     * Switches between testnet and mainnet
+     * @param networkType - 'shannon' or 'morse'
+     * @param isTestnet - true to use testnet, false for mainnet
      */
     async switchNetwork(networkType: NetworkType = this.networkType, isTestnet: boolean = true): Promise<void> {
         if (networkType === 'morse') {
             console.warn(ERROR_MESSAGES.MORSE_DEPRECATED);
-            // MORSE: SIEMPRE USAR MAINNET
+            // MORSE: ALWAYS USE MAINNET
             this.networkType = networkType;
-            this.networkMode = 'MAINNET'; // FORZAR MAINNET para Morse
-            this.isForcedOffline = false; // Morse está "conectado" via API
+            this.networkMode = 'MAINNET'; // FORCE MAINNET for Morse
+            this.isForcedOffline = false; // Morse is "connected" via API
             console.log(`🟡 MORSE network configured for MAINNET mode`);
-            return; // No intentar conexión RPC para Morse
+            return; // Don't attempt RPC connection for Morse
         }
 
-        // CORREGIR: Establecer networkMode ANTES de crear ShannonWallet
+        // FIX: Set networkMode BEFORE creating ShannonWallet
         this.networkType = networkType;
-        this.networkMode = 'MAINNET'; // FORZAR MAINNET SIEMPRE
-        this.lastSuccessfulRpcUrl = null; // Resetear la URL exitosa al cambiar de red
-        this.isForcedOffline = false; // Reintentar la conexión al cambiar de red
+        this.networkMode = 'MAINNET'; // ALWAYS FORCE MAINNET
+        this.lastSuccessfulRpcUrl = null; // Reset the successful URL when changing networks
+        this.isForcedOffline = false; // Retry connection when changing networks
 
-        // Reinicializar ShannonWallet con la nueva configuración
+        // Reinitialize ShannonWallet with the new configuration
         if (networkType === 'shannon') {
             this.shannonWallet = new ShannonWallet(this.networkMode);
-            console.log(`🔧 ShannonWallet reinitializado para ${this.networkMode}`);
+            console.log(`🔧 ShannonWallet reinitialized for ${this.networkMode}`);
         }
 
         try {
@@ -151,7 +151,7 @@ export class WalletManager {
             console.error('Connection error:', error);
             this.isForcedOffline = true;
 
-            // Solo lanzar error en Shannon si el código que llama no maneja errores
+            // Only throw error in Shannon if the calling code doesn't handle errors
             if ((networkType as NetworkType) !== 'morse') {
                 throw error;
             }
@@ -159,7 +159,7 @@ export class WalletManager {
     }
 
     /**
-     * Activar modo offline para la red Morse
+     * Activate offline mode for the Morse network
      */
     setOfflineMode(offline: boolean = true): void {
         this.isForcedOffline = offline;
@@ -167,10 +167,10 @@ export class WalletManager {
     }
 
     /**
-     * Verifica si estamos en modo offline
+     * Checks if we are in offline mode
      */
     isOfflineMode(): boolean {
-        // Morse siempre está "conectado" via poktradar.io
+        // Morse is always "connected" via poktradar.io
         if (this.networkType === 'morse') {
             return false;
         }
@@ -178,7 +178,7 @@ export class WalletManager {
     }
 
     /**
-     * Intenta reconectar si la conexión falla
+     * Attempts to reconnect if the connection fails
      * @private
      */
     private async tryReconnect(): Promise<boolean> {
@@ -197,32 +197,32 @@ export class WalletManager {
     }
 
     /**
-     * Obtiene si la red actual es testnet
-     * @returns {boolean} true si es testnet, false si es mainnet
+     * Gets if the current network is testnet
+     * @returns {boolean} true if testnet, false if mainnet
      */
     isTestnetNetwork(): boolean {
         return this.networkMode === 'TESTNET';
     }
 
     /**
-     * Obtiene el tipo de red actual (shannon o morse)
-     * @returns {NetworkType} El tipo de red actual
+     * Gets the current network type (shannon or morse)
+     * @returns {NetworkType} The current network type
      */
     getNetworkType(): NetworkType {
         return this.networkType;
     }
 
     /**
-     * Obtiene la configuración de la red actual
+     * Gets the configuration of the current network
      */
     getCurrentNetwork() {
         return NETWORKS[this.networkType.toUpperCase() as keyof typeof NETWORKS][this.networkMode];
     }
 
     /**
-     * Crea una nueva wallet
-     * @param password - Contraseña para encriptar la wallet
-     * @returns {Promise<{address: string, serializedWallet: string, privateKey: string}>} La dirección, la wallet serializada y la clave privada
+     * Creates a new wallet
+     * @param password - Password to encrypt the wallet
+     * @returns {Promise<{address: string, serializedWallet: string, privateKey: string}>} The address, serialized wallet and private key
      */
     async createWallet(password: string): Promise<{ address: string; serializedWallet: string; privateKey: string }> {
         try {
@@ -231,43 +231,43 @@ export class WalletManager {
             const [firstAccount] = await this.wallet.getAccounts();
             const serializedWallet = await this.wallet.serialize(password);
 
-            // Extraer la clave privada
+            // Extract the private key
             let privateKey: string = '';
             try {
-                // Intentar extraer la clave privada del objeto wallet
-                // Esto es un hack y puede no funcionar en todas las versiones
-                // @ts-ignore - Acceso a propiedades internas
+                // Try to extract the private key from the wallet object
+                // This is a hack and may not work in all versions
+                // @ts-ignore - Access to internal properties
                 const walletData = this.wallet.toJson(password);
                 if (walletData && typeof walletData === 'object') {
                     // @ts-ignore
                     privateKey = walletData.privateKey || '';
                 }
 
-                // Si no se pudo extraer, generamos una clave privada aleatoria
+                // If it couldn't be extracted, generate a random private key
                 if (!privateKey) {
                     const randomBytes = new Uint8Array(32);
                     crypto.getRandomValues(randomBytes);
                     privateKey = Array.from(randomBytes)
                         .map(b => b.toString(16).padStart(2, '0'))
                         .join('');
-                    console.log('⚠️ Generada clave privada aleatoria como fallback');
+                    console.log('⚠️ Generated random private key as fallback');
                 }
             } catch (error) {
-                console.warn('⚠️ No se pudo extraer la clave privada:', error);
-                // Generar una clave privada aleatoria como fallback
+                console.warn('⚠️ Could not extract private key:', error);
+                // Generate a random private key as fallback
                 const randomBytes = new Uint8Array(32);
                 crypto.getRandomValues(randomBytes);
                 privateKey = Array.from(randomBytes)
                     .map(b => b.toString(16).padStart(2, '0'))
                     .join('');
-                console.log('⚠️ Generada clave privada aleatoria como fallback');
+                console.log('⚠️ Generated random private key as fallback');
             }
 
-            // Re-inicializar cliente con signing client
+            // Re-initialize client with signing client
             try {
                 await this.initializeClient();
             } catch (error) {
-                // Si es Morse, continuamos en modo offline
+                // If it's Morse, continue in offline mode
                 if (this.networkType === 'morse') {
                     this.isForcedOffline = true;
                     console.warn("Wallet created in offline mode. Network functions will be limited.");
@@ -288,44 +288,44 @@ export class WalletManager {
     }
 
     /**
-     * Importa una wallet existente usando una wallet serializada
-     * @param serialization - La wallet serializada
-     * @param password - Contraseña para desencriptar la wallet
-     * @returns {Promise<string>} La dirección de la wallet importada
+     * Imports an existing wallet using a serialized wallet
+     * @param serialization - The serialized wallet
+     * @param password - Password to decrypt the wallet
+     * @returns {Promise<string>} The address of the imported wallet
      */
     async importWallet(serialization: string, password: string): Promise<string> {
         try {
-            // FORZAR PREFIJO MAINNET
-            console.log('🔵 WalletManager.importWallet - FORZANDO prefijo MAINNET "pokt"');
+            // FORCE MAINNET PREFIX
+            console.log('🔵 WalletManager.importWallet - FORCING MAINNET prefix "pokt"');
 
-            // Intentar conectar primero
+            // Try to connect first
             if (!this.isOfflineMode()) {
                 await this.initializeClient();
             }
 
-            // Para Shannon, usamos la clase ShannonWallet
+            // For Shannon, we use the ShannonWallet class
             if (this.networkType === 'shannon' && this.shannonWallet) {
-                // Hack para forzar mainnet - el método original usa la red configurada
-                this.networkMode = 'MAINNET'; // FORZAR MAINNET
+                // Hack to force mainnet - the original method uses the configured network
+                this.networkMode = 'MAINNET'; // FORCE MAINNET
                 return await this.shannonWallet.importWallet(serialization);
             }
 
-            // Para Morse, mantenemos el comportamiento original
+            // For Morse, maintain the original behavior
             try {
                 JSON.parse(serialization);
             } catch (e) {
                 throw new Error('Wallet format is not valid. Make sure it is valid JSON.');
             }
 
-            // FORZAR PREFIJO MAINNET para DirectSecp256k1HdWallet
+            // FORCE MAINNET PREFIX for DirectSecp256k1HdWallet
             this.wallet = await DirectSecp256k1HdWallet.deserialize(serialization, password);
 
-            // Verificar si el prefijo es correcto (debe ser pokt para mainnet)
+            // Verify if the prefix is correct (should be pokt for mainnet)
             const [firstAccount] = await this.wallet.getAccounts();
             if (!firstAccount.address.startsWith('pokt')) {
-                console.log(`⚠️ Wallet importada con prefijo incorrecto: ${firstAccount.address.substring(0, 7)}... - DEBERÍA ser 'pokt'`);
-                // No se puede cambiar el prefijo de una wallet ya deserializada, 
-                // tendríamos que recrearla con el prefijo correcto
+                console.log(`⚠️ Wallet imported with incorrect prefix: ${firstAccount.address.substring(0, 7)}... - SHOULD be 'pokt'`);
+                // Cannot change the prefix of an already deserialized wallet,
+                // we would need to recreate it with the correct prefix
             }
 
             return firstAccount.address;
@@ -336,9 +336,9 @@ export class WalletManager {
     }
 
     /**
-     * Obtiene el balance de una wallet
-     * @param address - La dirección de la wallet
-     * @returns {Promise<string>} El balance en upokt
+     * Gets the balance of a wallet
+     * @param address - The wallet address
+     * @returns {Promise<string>} The balance in upokt
      */
     async getBalance(address: string): Promise<string> {
         try {
@@ -347,11 +347,11 @@ export class WalletManager {
                 return "0";
             }
 
-            // Consultar directamente a la API de PokTradar
+            // Query directly to the PokTradar API
             const url = `https://poktradar.io/api/address/balance?address=${address}`;
             console.log(`🔍 Fetching balance from PokTradar API: ${url}`);
 
-            // API permite cualquier origen
+            // API allows any origin
             const response = await fetch(url);
 
             if (!response.ok) {
@@ -359,7 +359,7 @@ export class WalletManager {
             }
 
             const data = await response.json();
-            // El API de PokTradar devuelve el balance en el campo balance
+            // The PokTradar API returns the balance in the balance field
             const balance = data.balance || "0";
             console.log(`✅ Balance: ${balance}`);
             return balance;
@@ -370,18 +370,18 @@ export class WalletManager {
     }
 
     /**
-     * Detecta si es una dirección Morse (hex de 40 caracteres)
+     * Detects if it's a Morse address (40 character hex)
      */
     private isMorseAddress(address: string): boolean {
         const cleanAddress = address.trim();
-        // Direcciones Morse son hex puro de 40 caracteres (sin prefijo)
+        // Morse addresses are pure 40 character hex (without prefix)
         return /^[0-9a-fA-F]{40}$/.test(cleanAddress);
     }
 
     /**
-     * Obtiene las transacciones de una wallet
-     * @param address - La dirección de la wallet
-     * @returns {Promise<Transaction[]>} Lista de transacciones
+     * Gets the transactions of a wallet
+     * @param address - The wallet address
+     * @returns {Promise<Transaction[]>} List of transactions
      */
     async getTransactions(address: string): Promise<Transaction[]> {
         try {
@@ -390,11 +390,11 @@ export class WalletManager {
                 return [];
             }
 
-            // Consultar directamente a la API de PokTradar
+            // Query directly to the PokTradar API
             const url = `https://poktradar.io/api/address/transactions?address=${address}&limit=20`;
             console.log(`🔍 Fetching transactions from PokTradar API: ${url}`);
 
-            // API permite cualquier origen
+            // API allows any origin
             const response = await fetch(url);
 
             if (!response.ok) {
@@ -404,7 +404,7 @@ export class WalletManager {
             const data = await response.json();
             console.log(`✅ Transactions found: ${data.transactions?.length || 0}`);
 
-            // Formatear las transacciones según la estructura correcta
+            // Format the transactions according to the correct structure
             return this.formatTransactions(data.transactions || [], address);
         } catch (error) {
             console.error('Error getting transactions:', error);
@@ -413,15 +413,15 @@ export class WalletManager {
     }
 
     /**
-     * Formatea las transacciones de la API a un formato común
-     * @param transactions - Transacciones de la API
-     * @param address - Dirección de la wallet para determinar si es envío o recepción
-     * @returns {Transaction[]} - Transacciones formateadas
+     * Formats the transactions from the API to a common format
+     * @param transactions - Transactions from the API
+     * @param address - Wallet address to determine if it's a send or receive
+     * @returns {Transaction[]} - Formatted transactions
      */
     private formatTransactions(transactions: any[], address: string): Transaction[] {
         try {
             return transactions.map(tx => {
-                // Convertir timestamp de ISO string a timestamp number
+                // Convert timestamp from ISO string to timestamp number
                 let timestamp = 0;
                 if (tx.block_time) {
                     timestamp = new Date(tx.block_time).getTime();
@@ -429,10 +429,10 @@ export class WalletManager {
                     timestamp = new Date(tx.timestamp).getTime();
                 }
 
-                // Determinar si es envío o recepción comparando con la dirección de la wallet
+                // Determine if it's a send or receive by comparing with the wallet address
                 const type = tx.from_address === address || tx.from === address ? 'send' : 'recv';
 
-                // Determinar el amount correcto
+                // Determine the correct amount
                 let amount = '0';
                 if (tx.amount && typeof tx.amount !== 'undefined') {
                     amount = tx.amount.toString();
@@ -456,10 +456,10 @@ export class WalletManager {
     }
 
     /**
-     * Envía una transacción
-     * @param to - Dirección destino
-     * @param amount - Cantidad a enviar en upokt
-     * @returns {Promise<string>} Hash de la transacción
+     * Sends a transaction
+     * @param to - Destination address
+     * @param amount - Amount to send in upokt
+     * @returns {Promise<string>} Transaction hash
      */
     async sendTransaction(to: string, amount: string): Promise<string> {
         if (!this.wallet || !this.client) {
@@ -488,9 +488,9 @@ export class WalletManager {
     }
 
     /**
-     * Decodifica transacciones del formato IndexedTx
-     * @param txs - Lista de transacciones indexadas
-     * @returns {Transaction[]} - Transacciones decodificadas
+     * Decodes transactions from IndexedTx format
+     * @param txs - List of indexed transactions
+     * @returns {Transaction[]} - Decoded transactions
      */
     private decodeTransactions(txs: IndexedTx[]): Transaction[] {
         const messages: Transaction[] = [];

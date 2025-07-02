@@ -35,18 +35,18 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
     const [showPrivateKey, setShowPrivateKey] = useState<string | null>(null);
     const [privateKeyData, setPrivateKeyData] = useState<string | null>(null);
 
-    // SOLO CARGAR DESDE STORAGE AL INICIO, UNA VEZ
+    // ONLY LOAD FROM STORAGE AT STARTUP, ONCE
     useEffect(() => {
         const loadInitialData = async () => {
-            // Cargar wallets
+            // Load wallets
             await loadAvailableWallets();
 
-            // FORZAR MAINNET SIEMPRE
+            // ALWAYS FORCE MAINNET
             console.log('🎯 WalletSelector: FORZANDO MAINNET por defecto');
             setSelectedMainnet(true);
             await storageService.set('isMainnet', true);
 
-            // Notificar al padre si existe el callback
+            // Notify parent if callback exists
             if (onMainnetChange) {
                 onMainnetChange(true);
             }
@@ -54,7 +54,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
 
         loadInitialData();
 
-        // Listener para actualizaciones de storage (solo wallets, no isMainnet)
+        // Listener for storage updates (only wallets, not isMainnet)
         const handleStorageUpdate = () => {
             console.log('WalletSelector: Storage actualizado, recargando wallets');
             loadAvailableWallets();
@@ -65,20 +65,20 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         return () => {
             window.removeEventListener('storage_updated', handleStorageUpdate);
         };
-    }, []); // SIN DEPENDENCIAS para que solo se ejecute una vez
+    }, []); // NO DEPENDENCIES to execute only once
 
-    // FORZAR MAINNET SIEMPRE
+    // ALWAYS FORCE MAINNET
     useEffect(() => {
         setSelectedMainnet(true);
 
-        // Solo notificar si NO es ya mainnet
+        // Only notify if it's NOT already mainnet
         if (isMainnet !== true && onMainnetChange) {
             onMainnetChange(true);
         }
     }, [isMainnet, onMainnetChange]);
 
     const loadAvailableWallets = async () => {
-        // Usar el nuevo método del walletService para obtener todas las wallets
+        // Use the new walletService method to get all wallets
         try {
             const allWallets = await walletService.getAllWallets();
             setAvailableWallets(allWallets);
@@ -86,7 +86,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
             setHasMorse(allWallets.morse.length > 0);
         } catch (error) {
             console.error('Error cargando wallets:', error);
-            // Fallback al método anterior si falla
+            // Fallback to previous method if it fails
 
             // --- SHANNON wallets ---
             const shannonArr = (await storageService.get<any[]>('shannon_wallets')) || [];
@@ -157,26 +157,26 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         return `${address.slice(0, 8)}...${address.slice(-6)}`;
     };
 
-    // Función para mostrar la clave privada de la wallet seleccionada
+    // Function to show the private key of the selected wallet
     const handleShowPrivateKey = async (address: string, network: NetworkType) => {
         try {
-            setPrivateKeyData(null); // Resetear datos anteriores
-            setShowPrivateKey(address); // Mostrar el modal
+            setPrivateKeyData(null); // Reset previous data
+            setShowPrivateKey(address); // Show the modal
 
             let privateKey: string | null = null;
 
             if (network === 'morse') {
-                // Obtener clave privada de Morse
+                // Get Morse private key
                 privateKey = await walletService.getMorsePrivateKey();
                 console.log('🔑 Obtenida clave privada de Morse');
             } else {
-                // Obtener clave privada de Shannon
+                // Get Shannon private key
                 privateKey = await walletService.getShannonPrivateKey();
                 console.log('🔑 Obtenida clave privada de Shannon');
             }
 
             if (privateKey) {
-                // Si la respuesta parece ser un objeto JSON, formatearla para mejor visualización
+                // If the response seems to be a JSON object, format it for better visualization
                 if (privateKey.startsWith('{') && privateKey.endsWith('}')) {
                     try {
                         const jsonObj = JSON.parse(privateKey);
@@ -196,7 +196,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         }
     };
 
-    // Determinar qué redes están disponibles
+    // Determine which networks are available
     const availableNetworks = [];
     if (hasShannon) availableNetworks.push('shannon');
     if (hasMorse) availableNetworks.push('morse');
@@ -299,12 +299,12 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                             const newIsMainnet = e.target.value === 'mainnet';
                                             setSelectedMainnet(newIsMainnet);
 
-                                            // GUARDAR INMEDIATAMENTE EN STORAGE cuando el usuario cambie
+                                            // SAVE IMMEDIATELY TO STORAGE when user changes
                                             storageService.set('isMainnet', newIsMainnet).then(() => {
                                                 console.log('🎯 WalletSelector: Mainnet preference saved to storage:', newIsMainnet === true ? 'mainnet' : 'testnet');
                                             });
 
-                                            // Notificar el cambio al componente padre si existe el callback
+                                            // Notify the change to the parent component if the callback exists
                                             if (onMainnetChange) {
                                                 onMainnetChange(newIsMainnet);
                                             }

@@ -1,38 +1,38 @@
 /**
- * Formatea una cantidad de POKT para su visualización
- * @param balanceInUpokt Balance en uPOKT (1 POKT = 1,000,000 uPOKT)
- * @returns Una cadena formateada con el balance en POKT
+ * Formats a balance of POKT for display
+ * @param balanceInUpokt Balance in uPOKT (1 POKT = 1,000,000 uPOKT)
+ * @returns A formatted string with the balance in POKT
  */
 export const formatBalance = (balanceInUpokt: string): string => {
-    // Verificar que el balance sea válido
+    // Check that the balance is valid
     if (!balanceInUpokt || isNaN(Number(balanceInUpokt))) {
         return '0.00';
     }
 
     try {
-        // Convertir de uPOKT a POKT (1 POKT = 1,000,000 uPOKT)
+        // Convert from uPOKT to POKT (1 POKT = 1,000,000 uPOKT)
         const balanceInPOKT = Number(balanceInUpokt) / 1_000_000;
 
-        // Verificar que la conversión haya sido exitosa
+        // Verify that the conversion was successful
         if (isNaN(balanceInPOKT)) {
             return '0.00';
         }
 
-        // Formatear con separador de miles y 2 decimales mínimo, hasta 6 máximo
+        // Format with thousands separator and minimum 2 decimals, up to 6 maximum
         return balanceInPOKT.toLocaleString('es-ES', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 6
         });
     } catch (error) {
-        console.error('Error al formatear balance:', error);
+        console.error('Error formatting balance:', error);
         return '0.00';
     }
 };
 
 /**
- * Acorta una dirección o hash para mostrarla de forma más concisa
- * @param address La dirección o hash a acortar
- * @returns La dirección acortada (6 primeros + ... + 4 últimos caracteres)
+ * Shortens an address or hash for display in a more concise format
+ * @param address The address or hash to shorten
+ * @returns The shortened address (first 6 + ... + last 4 characters)
  */
 export const shortenAddress = (address: string): string => {
     if (!address || address.length < 12) {

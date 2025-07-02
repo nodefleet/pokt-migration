@@ -45,7 +45,7 @@ export const NETWORKS = {
     }
 };
 
-// Para compatibilidad con código existente
+// For compatibility with existing code
 export const MAINNET = NETWORKS.SHANNON.MAINNET;
 export const TESTNET = NETWORKS.SHANNON.MAINNET;
 

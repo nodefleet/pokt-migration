@@ -30,7 +30,7 @@ const App: React.FC = () => {
     const [networkError, setNetworkError] = useState<string | null>(null);
     const [walletService] = useState(() => new WalletService());
 
-    // Función para cargar balance y transacciones
+    // Function to load balance and transactions
     const loadWalletData = async (address: string) => {
         try {
             console.log('📊 Loading wallet data for:', address);
@@ -40,23 +40,23 @@ const App: React.FC = () => {
                 return;
             }
 
-            // Resetear balance a 0 antes de cargar para evitar mostrar el balance anterior
+            // Reset balance to 0 before loading to avoid showing the previous balance
             setBalance('0');
 
-            // Verificar que el walletService esté inicializado
+            // Verify that walletService is initialized
             if (!walletService.getWalletManager()) {
-                console.log('⚠️ WalletManager no inicializado, inicializando...');
+                console.log('⚠️ WalletManager no initialized, initializing...');
                 await walletService.init();
             }
 
-            // Cargar balance
+            // Load balance
             const walletInfo = await walletService.getCurrentWalletInfo();
             if (walletInfo) {
                 console.log(`💰 Balance loaded for ${address}: ${walletInfo.balance}`);
                 setBalance(walletInfo.balance);
             } else {
                 console.warn(`⚠️ No wallet info returned for address ${address}`);
-                // Intentar obtener balance directamente
+                // Try to get balance directly
                 const directBalance = await walletService.getBalance(address);
                 if (directBalance) {
                     console.log(`💰 Direct balance loaded: ${directBalance}`);
@@ -67,7 +67,7 @@ const App: React.FC = () => {
                 }
             }
 
-            // Cargar transacciones
+            // Load transactions
             try {
                 const walletTransactions = await walletService.getTransactions(address);
                 setTransactions(walletTransactions);
@@ -77,39 +77,39 @@ const App: React.FC = () => {
                 setTransactions([]);
             }
 
-            // Disparar evento de actualización para que otros componentes se actualicen
+            // Trigger update event for other components to update
             window.dispatchEvent(new CustomEvent('wallet_data_updated', {
                 detail: { address, balance: walletInfo?.balance || '0' }
             }));
 
         } catch (error) {
             console.error('❌ Error loading wallet data:', error);
-            // En caso de error, mantener valores por defecto
+            // In case of error, keep default values
             setBalance('0');
             setTransactions([]);
         }
     };
 
-    // Listener para cambios en storage
+    // Listener for storage changes
     useEffect(() => {
         const handleStorageUpdate = async (event: CustomEvent) => {
             const { key, value } = event.detail;
             console.log('Storage updated:', key, value);
 
-            // Manejar actualizaciones de wallets Shannon
+            // Handle Shannon wallets updates
             if (key === 'shannon_wallet' && value) {
                 const walletData = JSON.parse(value);
                 if (walletData.parsed?.address) {
                     setState(prev => ({ ...prev, walletAddress: walletData.parsed.address }));
                     setNetworkType('shannon');
 
-                    // SIEMPRE RESPETAR la configuración isMainnet del storage - NUNCA SOBRESCRIBIR
+                    // ALWAYS RESPECT the isMainnet configuration from storage - NEVER OVERWRITE
                     const savedIsMainnet = storageService.getSync<boolean>('isMainnet');
                     if (savedIsMainnet !== null && savedIsMainnet !== undefined) {
                         setIsMainnet(savedIsMainnet);
                         console.log('Shannon wallet updated - RESPECTING saved isMainnet:', savedIsMainnet);
                     } else {
-                        // Solo usar TESTNET por defecto si NO HAY configuración previa
+                        // Only use TESTNET by default if there is NO previous configuration
                         setIsMainnet(false);
                         await storageService.set('isMainnet', false);
                         console.log('Shannon wallet updated - using TESTNET default (NO previous config)');
@@ -117,27 +117,27 @@ const App: React.FC = () => {
 
                     console.log('Shannon wallet address updated from storage:', walletData.parsed.address);
 
-                    // Navegar al dashboard si no estamos ya ahí
+                    // Navigate to dashboard if we're not already there
                     if (window.location.pathname !== '/wallet') {
                         navigate('/wallet');
                     }
                 }
             }
 
-            // Manejar actualizaciones de wallets Morse
+            // Handle Morse wallets updates
             if (key === 'morse_wallet' && value) {
                 const walletData = JSON.parse(value);
                 if (walletData.parsed?.address) {
                     setState(prev => ({ ...prev, walletAddress: walletData.parsed.address }));
                     setNetworkType('morse');
 
-                    // MORSE TAMBIÉN RESPETA la configuración isMainnet del storage
+                    // MORSE ALSO RESPECTS the isMainnet configuration from storage
                     const savedIsMainnet = await storageService.get<boolean>('isMainnet');
                     if (savedIsMainnet !== null && savedIsMainnet !== undefined) {
                         setIsMainnet(savedIsMainnet);
                         console.log('Morse wallet updated - RESPECTING saved isMainnet:', savedIsMainnet);
                     } else {
-                        // Si no hay configuración previa, usar false como default para Morse
+                        // If there is no previous configuration, use false as default for Morse
                         setIsMainnet(false);
                         await storageService.set('isMainnet', false);
                         console.log('Morse wallet updated - using testnet as default (NO previous config)');
@@ -145,7 +145,7 @@ const App: React.FC = () => {
 
                     console.log('Morse wallet address updated from storage:', walletData.parsed.address);
 
-                    // Navegar al dashboard
+                    // Navigate to dashboard
                     if (window.location.pathname !== '/wallet') {
                         navigate('/wallet');
                     }
@@ -160,11 +160,11 @@ const App: React.FC = () => {
         };
     }, [navigate]);
 
-    // Comprobar si hay una wallet activa al cargar
+    // Check if there is an active wallet when loading
     useEffect(() => {
         const checkStoredWallets = async () => {
             try {
-                // PRIMERO: Cargar configuración de red cacheada ANTES de inicializar walletService
+                // FIRST: Load cached network configuration BEFORE initializing walletService
                 const cachedIsMainnet = await storageService.get<boolean>('isMainnet');
                 const cachedNetworkType = await storageService.get<string>('pokt_network_type') || 'shannon';
 
@@ -173,21 +173,21 @@ const App: React.FC = () => {
                     networkType: cachedNetworkType
                 });
 
-                // Configurar estado inicial basado en cache
+                // Configure initial state based on cache
                 if (cachedIsMainnet !== null && cachedIsMainnet !== undefined) {
                     setIsMainnet(cachedIsMainnet);
                     console.log(`📍 Using cached isMainnet: ${cachedIsMainnet}`);
                 } else {
-                    // Si no hay cache, defaultear a testnet
+                    // If there is no cache, default to testnet
                     setIsMainnet(false);
                     await storageService.set('isMainnet', false);
                     console.log('📍 No cached isMainnet - defaulting to testnet');
                 }
 
-                // Inicializar el walletService DESPUÉS de configurar el estado
+                // Initialize walletService AFTER configuring the state
                 await walletService.init();
 
-                // Usar storageService en lugar de acceso directo
+                // Use storageService instead of direct access
                 const morseWallet = await storageService.get<StoredWallet>('morse_wallet');
                 const shannonWallet = await storageService.get<StoredWallet>('shannon_wallet');
 
@@ -204,41 +204,41 @@ const App: React.FC = () => {
                     console.log('Using wallet:', lastWallet);
 
                     if (lastWallet && lastWallet.parsed?.address) {
-                        // USAR DIRECTAMENTE la red guardada en storage
+                        // USE DIRECTLY the network saved in storage
                         const address = lastWallet.parsed.address;
-                        const networkFromStorage = lastWallet.network; // morse o shannon
+                        const networkFromStorage = lastWallet.network; // morse or shannon
 
-                        // Configurar estado directamente según lo guardado
+                        // Configure state directly according to what was saved
                         setState(prev => ({ ...prev, walletAddress: address }));
                         setNetworkType(networkFromStorage);
 
-                        // USAR LA CONFIGURACIÓN YA CARGADA (no volver a cargarla)
-                        const finalIsMainnet = Boolean(cachedIsMainnet === true); // FORZAR booleano válido
+                        // USE THE CONFIGURATION ALREADY LOADED (don't load it again)
+                        const finalIsMainnet = Boolean(cachedIsMainnet === true); // FORCE valid boolean
                         console.log(`📍 Using final config for wallet loading: ${networkFromStorage} ${finalIsMainnet ? 'mainnet' : 'testnet'}`);
                         console.log(`🔍 DEBUG finalIsMainnet type: ${typeof finalIsMainnet}, value: ${finalIsMainnet}`);
 
-                        // CONFIGURAR WALLETSERVICE con la configuración cacheada
+                        // Configure walletService with the cached configuration
                         if (networkFromStorage === 'morse') {
                             await walletService.switchNetwork('morse', false);
                         } else {
                             await walletService.switchNetwork('shannon', finalIsMainnet);
                         }
 
-                        // Si hay una wallet activa, navegar al dashboard a menos que esté en una página de importación específica
+                        // If there is an active wallet, navigate to dashboard unless on an import specific page
                         const currentPath = window.location.pathname;
                         const isImportPage = currentPath.includes('/import/');
                         const isRootPage = currentPath === '/';
 
-                        // Solo navegar automáticamente si estamos en la página raíz y no es una navegación explícita a import
+                        // Only auto-navigate if we're on the root page and not an explicit navigation to import
                         if (isRootPage && !isImportPage) {
                             console.log('Auto-navigating to wallet dashboard from root page');
                             navigate('/wallet');
                         }
 
-                        // CARGAR DATOS AUTOMÁTICAMENTE para wallets activas
+                        // Load data automatically for active wallets
                         if (lastWallet && lastWallet.parsed?.address) {
                             console.log('📊 Loading data for stored wallet:', lastWallet.parsed.address);
-                            // Pequeño delay para permitir que la configuración se complete
+                            // Small delay to allow configuration to complete
                             setTimeout(() => {
                                 loadWalletData(lastWallet.parsed.address);
                             }, 500);
@@ -265,11 +265,11 @@ const App: React.FC = () => {
                 await walletService.init();
             }
 
-            // Usar el nuevo método que detecta automáticamente la red
+            // Use the new method that automatically detects the network
             const walletInfo = await walletService.importWallet(code, password, network);
             console.log('✅ Wallet imported successfully:', walletInfo);
 
-            // Solo guardar en storage si NO viene del storage (evitar loops)
+            // Only save to storage if NOT coming from storage (avoid loops)
             if (!fromStorage) {
                 const storageData = {
                     serialized: code,
@@ -289,9 +289,9 @@ const App: React.FC = () => {
             setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
             setNetworkType(walletInfo.network);
 
-            // MANTENER la configuración isMainnet del storage si existe
+            // Keep the storage isMainnet configuration if it exists
             if (fromStorage) {
-                // Cargar isMainnet desde storage si viene del storage
+                // Load isMainnet from storage if coming from storage
                 const savedIsMainnet = await storageService.get<boolean>('isMainnet');
                 if (savedIsMainnet !== null && savedIsMainnet !== undefined) {
                     setIsMainnet(savedIsMainnet);
@@ -302,7 +302,7 @@ const App: React.FC = () => {
                     console.log(`🔧 Set isMainnet from walletInfo: ${walletInfo.isMainnet}`);
                 }
             } else {
-                // Nueva importación - usar el valor detectado y guardarlo
+                // New import - use the detected value and save it
                 setIsMainnet(walletInfo.isMainnet);
                 await storageService.set('isMainnet', walletInfo.isMainnet);
                 console.log(`🆕 New import - set isMainnet: ${walletInfo.isMainnet}`);
@@ -325,12 +325,12 @@ const App: React.FC = () => {
                 await walletService.init();
             }
 
-            // Usar el método createWallet del walletService
+            // Use the walletService createWallet method
             const walletInfo = await walletService.createWallet(password, network || 'shannon', false);
 
-            // Guardar en storage con la configuración detectada
+            // Save to storage with the detected configuration
             await storageService.set(`${walletInfo.network}_wallet`, {
-                serialized: '', // La wallet creada no tiene mnemónico para guardar
+                serialized: '', // The created wallet does not have a mnemonic to save
                 network: walletInfo.network,
                 timestamp: Date.now(),
                 parsed: { address: walletInfo.address }
@@ -339,7 +339,7 @@ const App: React.FC = () => {
             setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
             setNetworkType(walletInfo.network);
 
-            // Para nueva wallet creada, usar el valor detectado y guardarlo
+            // For new wallet created, use the detected value and save it
             setIsMainnet(walletInfo.isMainnet);
             await storageService.set('isMainnet', walletInfo.isMainnet);
             console.log(`💾 New wallet created - saving isMainnet: ${walletInfo.isMainnet}`);
@@ -357,10 +357,10 @@ const App: React.FC = () => {
         try {
             console.log('🚪 Starting complete logout...');
 
-            // 1. Limpiar el servicio de wallets
+            // 1. Clear the wallet service
             walletService.logout();
 
-            // 2. Limpiar estados locales
+            // 2. Clear local states
             setState({ walletAddress: null, showTransactions: false });
             setBalance('0');
             setTransactions([]);
@@ -368,7 +368,7 @@ const App: React.FC = () => {
             setIsMainnet(false);
             setNetworkError(null);
 
-            // 3. LIMPIAR COMPLETAMENTE TODO EL STORAGE relacionado con wallets
+            // 3. CLEAR COMPLETELY ALL THE STORAGE related to wallets
             await storageService.remove('isMainnet');
             await storageService.remove('shannon_wallet');
             await storageService.remove('morse_wallet');
@@ -377,7 +377,7 @@ const App: React.FC = () => {
             await storageService.remove('pokt_network_type');
             await storageService.remove('pokt_network');
 
-            // 4. Limpiar cualquier otro dato residual
+            // 4. Clear any other residual data
             const keys = await storageService.keys();
             for (const key of keys) {
                 if (key.includes('wallet') || key.includes('address') || key.includes('network')) {
@@ -388,11 +388,11 @@ const App: React.FC = () => {
 
             console.log('✅ Complete logout finished - all wallet data cleared');
 
-            // 5. Navegar a la página principal
+            // 5. Navigate to the main page
             navigate('/');
         } catch (error) {
             console.error('❌ Error during logout:', error);
-            // Asegurar navegación aunque haya errores
+            // Ensure navigation even if there are errors
             navigate('/');
         }
     };
@@ -410,41 +410,41 @@ const App: React.FC = () => {
 
                         console.log(`🔄 DIRECT wallet change to: ${address} (${network}) - Mainnet: ${isMainnetSelected}`);
 
-                        // Actualización INMEDIATA del estado - sin esperar
+                        // Immediate state update - without waiting
                         setState(prev => ({ ...prev, walletAddress: address }));
                         setNetworkType(network);
 
-                        // USAR DIRECTAMENTE lo que selecciona el usuario - SIN DETECCIÓN
+                        // USE DIRECTLY what the user selects - WITHOUT DETECTION
                         if (isMainnetSelected !== undefined) {
                             setIsMainnet(isMainnetSelected);
-                            // Guardar la selección manual en storage
+                            // Save manual selection to storage
                             await storageService.set('isMainnet', isMainnetSelected);
                             console.log(`🎯 MANUAL mainnet selection: ${isMainnetSelected} - SAVED TO STORAGE`);
                         } else {
-                            // Solo para Shannon cuando no se especifica, usar TESTNET por defecto
+                            // Only for Shannon when not specified, use TESTNET by default
                             if (network === 'shannon') {
                                 setIsMainnet(false);
                                 await storageService.set('isMainnet', false);
                                 console.log(`📍 Shannon TESTNET default (NO manual selection)`);
                             } else {
-                                // Morse siempre testnet
+                                // Morse always testnet
                                 setIsMainnet(false);
                                 await storageService.set('isMainnet', false);
                                 console.log(`🟡 MORSE always testnet - SAVED TO STORAGE`);
                             }
                         }
 
-                        // Actualizar walletManager con la nueva configuración
+                        // Update walletManager with the new configuration
                         await walletService.switchNetwork(network, isMainnetSelected === true);
 
-                        // Importante: Cargar los datos de la nueva wallet seleccionada
+                        // Important: Load data for the new selected wallet
                         console.log('🔄 Loading wallet data for new selected wallet:', address);
                         await loadWalletData(address);
 
-                        // Guardar la dirección seleccionada en localStorage
+                        // Save selected address to localStorage
                         await storageService.set('walletAddress', address);
 
-                        // Navegar al dashboard si no estamos ya ahí
+                        // Navigate to dashboard if we're not already there
                         if (window.location.pathname !== '/wallet') {
                             navigate('/wallet');
                         }
@@ -459,39 +459,39 @@ const App: React.FC = () => {
 
                         console.log(`🔄 DIRECT network change to: ${network}`);
 
-                        // Verificación RÁPIDA de wallet
+                        // Quick check of wallet
                         const storedWallet = await storageService.get<StoredWallet>(`${network}_wallet`);
                         if (!storedWallet || !storedWallet.parsed?.address) {
                             setNetworkError(`No wallet found for ${network} network`);
                             return;
                         }
 
-                        // Actualización INMEDIATA del estado - USAR LA RED SELECCIONADA DIRECTAMENTE
+                        // Immediate state update - USE THE SELECTED RED DIRECTLY
                         const address = storedWallet.parsed.address;
                         setState(prev => ({ ...prev, walletAddress: address }));
                         setNetworkType(network);
 
-                        // MANTENER LA CONFIGURACIÓN ACTUAL DE MAINNET/TESTNET - NO SOBRESCRIBIR
+                        // KEEP THE CURRENT MAINNET/TESTNET CONFIGURATION - NO OVERWRITE
                         if (network === 'morse') {
-                            setIsMainnet(false); // Morse siempre testnet
+                            setIsMainnet(false); // Morse always testnet
                             await storageService.set('isMainnet', false);
                             console.log(`🟡 MORSE network selected - always testnet`);
                         } else {
-                            // Para Shannon: MANTENER la configuración actual del usuario
+                            // For Shannon: KEEP THE CURRENT USER PREFERENCE
                             const currentIsMainnet = await storageService.get<boolean>('isMainnet');
                             if (currentIsMainnet !== null && currentIsMainnet !== undefined) {
                                 setIsMainnet(currentIsMainnet);
                                 console.log(`🔵 SHANNON network selected - MAINTAINING user preference: ${currentIsMainnet === true ? 'mainnet' : 'testnet'}`);
                             } else {
-                                // Solo si no hay configuración previa, usar TESTNET por defecto
+                                // Only if there is no previous configuration, use TESTNET by default
                                 setIsMainnet(false);
                                 await storageService.set('isMainnet', false);
                                 console.log(`🔵 SHANNON network selected - using TESTNET default (NO previous config)`);
                             }
                         }
 
-                        // Configuración de red DIRECTA
-                        // CARGAR EL VALOR REAL de isMainnet desde storage para evitar desincronización
+                        // Direct network configuration
+                        // LOAD THE REAL VALUE of isMainnet from storage to avoid desynchronization
                         const currentStoredIsMainnet = await storageService.get<boolean>('isMainnet');
                         const realIsMainnet = currentStoredIsMainnet !== null ? currentStoredIsMainnet : false;
                         const finalIsMainnet = network === 'morse' ? false : realIsMainnet;
@@ -502,13 +502,13 @@ const App: React.FC = () => {
                             await walletService.switchNetwork('shannon', finalIsMainnet);
                         }
 
-                        // Limpiar datos
+                        // Clear data
                         setTransactions([]);
 
-                        // No resetear inmediatamente a 0, mantener balance anterior mientras carga
+                        // No reset immediately to 0, keep previous balance while loading
                         setTransactions([]);
 
-                        // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS
+                        // Load data automatically
                         await loadWalletData(address);
 
                         console.log(`✅ DIRECT network change completed: ${network} with wallet ${address}`);
@@ -521,22 +521,22 @@ const App: React.FC = () => {
                     try {
                         console.log(`🎯 MANUAL mainnet change: ${isMainnetSelected}`);
 
-                        // Actualizar estado inmediatamente
+                        // Update state immediately
                         setIsMainnet(isMainnetSelected);
 
-                        // GUARDAR EN STORAGE para persistir la selección manual
+                        // Save to storage for manual selection persistence
                         await storageService.set('isMainnet', isMainnetSelected);
                         console.log(`💾 Mainnet preference saved to storage: ${isMainnetSelected}`);
 
-                        // Reconfigurar la red con la nueva configuración
+                        // Reconfigure the network with the new configuration
                         if (networkType !== 'morse') {
                             await walletService.switchNetwork(networkType, isMainnetSelected);
                         }
 
-                        // Limpiar balance y transacciones para forzar recarga
+                        // Clear balance and transactions to force reload
                         setTransactions([]);
 
-                        // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS si hay wallet activa
+                        // Load data automatically if there is an active wallet
                         if (state.walletAddress) {
                             await loadWalletData(state.walletAddress);
                         }
@@ -568,46 +568,46 @@ const App: React.FC = () => {
                                         try {
                                             setNetworkError(null);
 
-                                            // Verificar si existe una wallet para esta red
+                                            // Verify if there is a wallet for this red
                                             const storedWallet = await storageService.get<StoredWallet>(`${network}_wallet`);
                                             if (!storedWallet || !storedWallet.parsed?.address) {
                                                 setNetworkError(`No wallet found for ${network} network`);
                                                 return;
                                             }
 
-                                            // USAR DIRECTAMENTE la red seleccionada - SIN DETECCIÓN
+                                            // USE DIRECTLY the red selected - WITHOUT DETECTION
                                             console.log(`🔄 WalletDashboard: Direct change to ${network} network`);
 
-                                            // Configurar estado directamente
+                                            // Configure state directly
                                             const address = storedWallet.parsed.address;
                                             setState(prev => ({ ...prev, walletAddress: address }));
                                             setNetworkType(network);
 
-                                            // MANTENER LA CONFIGURACIÓN ACTUAL DE MAINNET/TESTNET - NO SOBRESCRIBIR
+                                            // KEEP THE CURRENT MAINNET/TESTNET CONFIGURATION - NO OVERWRITE
                                             if (network === 'morse') {
-                                                setIsMainnet(false); // Morse siempre testnet
+                                                setIsMainnet(false); // Morse always testnet
                                                 await storageService.set('isMainnet', false);
                                             } else {
-                                                // Para Shannon: MANTENER la configuración actual del usuario
+                                                // For Shannon: KEEP THE CURRENT USER PREFERENCE
                                                 const currentIsMainnet = await storageService.get<boolean>('isMainnet');
                                                 if (currentIsMainnet !== null && currentIsMainnet !== undefined) {
                                                     setIsMainnet(currentIsMainnet);
                                                     console.log(`🔵 WalletDashboard: MAINTAINING user preference: ${currentIsMainnet === true ? 'mainnet' : 'testnet'}`);
                                                 } else {
-                                                    // Solo si no hay configuración previa, usar TESTNET por defecto
+                                                    // Only if there is no previous configuration, use TESTNET by default
                                                     setIsMainnet(false);
                                                     await storageService.set('isMainnet', false);
                                                     console.log(`🔵 WalletDashboard: using TESTNET default (NO previous config)`);
                                                 }
                                             }
 
-                                            // Limpiar datos
+                                            // Clear data
                                             setTransactions([]);
 
-                                            // No resetear inmediatamente a 0, mantener balance anterior mientras carga
+                                            // No reset immediately to 0, keep previous balance while loading
                                             setTransactions([]);
 
-                                            // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS
+                                            // Load data automatically
                                             await loadWalletData(address);
 
                                             console.log(`✅ WalletDashboard: Direct network change to ${network} completed`);
