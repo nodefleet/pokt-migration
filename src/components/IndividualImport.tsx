@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { IndividualImportProps } from '../types';
 import { ERROR_MESSAGES } from '../controller/config';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { storageService } from '../controller/storage.service';
 
 // Importar configuración para pocket-js
@@ -25,12 +25,36 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     const [morseError, setMorseError] = useState('');
     const [morseLoading, setMorseLoading] = useState(false);
     const [showGuide, setShowGuide] = useState(false);
+    const [urlMessage, setUrlMessage] = useState<string | null>(null);
 
     // Imported wallet lists for this session
     const [morseWalletList, setMorseWalletList] = useState<any[]>([]);
     const [shannonWalletList, setShannonWalletList] = useState<any[]>([]);
 
     const navigate = useNavigate();
+    const location = useLocation();
+
+    // Leer parámetros de la URL
+    useEffect(() => {
+        const queryParams = new URLSearchParams(location.search);
+        const network = queryParams.get('network');
+        const message = queryParams.get('message');
+        const action = queryParams.get('action');
+
+        // Si hay un mensaje en la URL, mostrarlo
+        if (message) {
+            setUrlMessage(message);
+        }
+
+        // Abrir automáticamente la sección correspondiente según el parámetro network
+        if (network === 'morse') {
+            setMorseOpen(true);
+            setShannonOpen(false);
+        } else if (network === 'shannon') {
+            setShannonOpen(true);
+            setMorseOpen(false);
+        }
+    }, [location]);
 
     // Cargar listas desde storage al montar
     useEffect(() => {
@@ -288,6 +312,21 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             >
                 Select a network to import your wallet
             </motion.p>
+
+            {/* URL Message Alert */}
+            {urlMessage && (
+                <motion.div
+                    className="mb-6 bg-blue-900/50 text-blue-300 p-4 rounded-xl border border-blue-700/50 flex items-start"
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                >
+                    <i className="fas fa-info-circle text-blue-400 text-xl mr-4 mt-1"></i>
+                    <div>
+                        <p className="text-sm">{urlMessage}</p>
+                    </div>
+                </motion.div>
+            )}
 
             {/* Morse Red Warning Banner */}
             {showMorseWarning && (

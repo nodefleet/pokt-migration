@@ -330,6 +330,32 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         try {
             console.log('🔄 Opening migration dialog...');
 
+            // Verificar si hay wallets de Morse disponibles
+            const morseWalletsData = await storageService.get<any[]>('morse_wallets');
+            const legacyMorseWallet = await storageService.get<any>('morse_wallet');
+            const hasMorseWallets = (Array.isArray(morseWalletsData) && morseWalletsData.length > 0) ||
+                (legacyMorseWallet && legacyMorseWallet.parsed?.address);
+
+            // Verificar si hay wallets de Shannon disponibles
+            const shannonWalletsData = await storageService.get<any[]>('shannon_wallets');
+            const legacyShannonWallet = await storageService.get<any>('shannon_wallet');
+            const hasShannonWallets = (Array.isArray(shannonWalletsData) && shannonWalletsData.length > 0) ||
+                (legacyShannonWallet && legacyShannonWallet.parsed?.address);
+
+            // Si no hay wallets de Morse, redirigir a la página de importación de Morse
+            if (!hasMorseWallets) {
+                console.log('⚠️ No Morse wallets found. Redirecting to import page...');
+                navigate('/import/individual?network=morse&message=You need to import your Morse wallet first to perform migration.');
+                return;
+            }
+
+            // Si no hay wallets de Shannon, redirigir a la página de importación de Shannon
+            if (!hasShannonWallets) {
+                console.log('⚠️ No Shannon wallets found. Redirecting to import page...');
+                navigate('/import/individual?network=shannon&message=You need to import your Shannon wallet first to perform migration.');
+                return;
+            }
+
             // Obtener la clave privada de Morse
             const privateKey = await morseWalletService.getMorsePrivateKey();
 
