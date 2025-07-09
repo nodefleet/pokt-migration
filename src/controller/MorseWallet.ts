@@ -5,6 +5,13 @@ import { DirectSecp256k1HdWallet, DirectSecp256k1Wallet } from "@cosmjs/proto-si
 import { useMutation, UseMutationResult } from "@tanstack/react-query";
 import { sha256 } from '@cosmjs/crypto';
 
+// Importar configuración para pocket-js
+import './pocketjs-config';
+
+// Importar KeyManager de pocket-js
+// @ts-ignore - Ignorar error de tipos para la biblioteca
+import { KeyManager } from '@pokt-foundation/pocketjs-signer';
+
 // Definir MorseError directamente
 class MorseError extends Error {
     constructor(message: string) {
@@ -146,12 +153,58 @@ export class MorseWalletService {
     }
 
     /**
-     * Importa una wallet de Morse (solo formato JSON)
+     * Importa una wallet de Morse (formato JSON o clave privada hex)
      */
     async importMorsePrivateKey(code: string, password: string): Promise<{ address: string, serialized: string }> {
         try {
+            const trimmedCode = code.trim();
+
+            // Verificar si es una clave privada hexadecimal directa (128 caracteres)
+            const cleanHex = trimmedCode.startsWith('0x') ? trimmedCode.substring(2) : trimmedCode;
+            const isHexPrivateKey = /^[0-9a-fA-F]{128}$/i.test(cleanHex);
+
+            if (isHexPrivateKey) {
+                console.log('🔑 Detectada clave privada en formato hexadecimal, usando pocket-js KeyManager');
+
+                try {
+                    // Usar KeyManager de pocket-js para importar la clave privada
+                    const keyManager = await KeyManager.fromPrivateKey(cleanHex);
+
+                    // Obtener dirección y clave pública
+                    const address = keyManager.getAddress();
+                    const publicKey = keyManager.getPublicKey();
+
+                    console.log('✅ Wallet importada correctamente con pocket-js:', {
+                        address,
+                        publicKey: publicKey.substring(0, 10) + '...'
+                    });
+
+                    // Crear objeto wallet en formato Morse
+                    const morseWallet = {
+                        addr: address,
+                        name: `morse_${address.substring(0, 8)}`,
+                        priv: cleanHex,
+                        account: 0
+                    };
+
+                    // Serializar para almacenamiento
+                    const serialized = JSON.stringify(morseWallet);
+
+                    this.currentAddress = address;
+
+                    return {
+                        address: address,
+                        serialized: serialized
+                    };
+                } catch (error: any) {
+                    console.error('❌ Error importando con pocket-js:', error);
+                    throw new Error(`Error importando clave privada: ${error.message}`);
+                }
+            }
+
+            // Si no es una clave privada hex, continuar con el proceso normal para JSON
             // Intentar varias técnicas de normalización para el JSON
-            let normalizedCode = code;
+            let normalizedCode = trimmedCode;
             let jsonData = null;
 
             // Técnica 1: Intentar parsear directamente

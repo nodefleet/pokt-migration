@@ -1,3 +1,6 @@
+// Importar polyfills primero
+import './polyfills';
+
 import './styles.css';
 import React, { useState, useEffect } from 'react';
 import ReactDOM from 'react-dom/client';
@@ -14,6 +17,10 @@ import { Transaction, NetworkType } from './controller/WalletManager';
 import { AnimatePresence } from 'framer-motion';
 import { storageService } from './controller/storage.service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// Ya no es necesario configurar Buffer aquí, ya está en polyfills.ts
+// import { Buffer } from 'buffer';
+// window.Buffer = Buffer;
 
 const queryClient = new QueryClient();
 

@@ -171,11 +171,11 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             if (Array.isArray(storedMorseArr) && storedMorseArr.length > 0) {
                 storedMorseArr.forEach((item, idx) => {
                     const addr = item.parsed?.addr || `morse_${idx}`;
-                morseOptions.push({
+                    morseOptions.push({
                         id: item.id,
                         name: `Morse Wallet (${addr.substring(0, 8)}...)`,
                         address: addr,
-                    type: 'morse',
+                        type: 'morse',
                         privateKey: item.serialized // Puede ser JSON o hex
                     });
                 });
@@ -199,7 +199,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             if (Array.isArray(storedShannonArr) && storedShannonArr.length > 0) {
                 storedShannonArr.forEach((item, idx) => {
                     const addr = item.parsed?.address || `shannon_${idx}`;
-                shannonOptions.push({
+                    shannonOptions.push({
                         id: item.id,
                         name: `Shannon Wallet (${addr.substring(0, 8)}...)`,
                         address: addr,
@@ -210,7 +210,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             } else {
                 const legacyShannon = await storageService.get<any>('shannon_wallet');
                 if (legacyShannon && legacyShannon.parsed?.address) {
-                shannonOptions.push({
+                    shannonOptions.push({
                         id: 'shannon_legacy',
                         name: `Shannon Wallet (${legacyShannon.parsed.address.substring(0, 8)}...)`,
                         address: legacyShannon.parsed.address,
@@ -227,8 +227,8 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             if (morseOptions.length > 0) setSelectedMorseWallets(morseOptions.map(o => o.id));
             if (shannonOptions.length === 1) setSelectedShannonWallet(shannonOptions[0].id);
 
-                setSuccessMessage(null);
-                setError(null);
+            setSuccessMessage(null);
+            setError(null);
         } catch (error) {
             console.error('❌ Error loading wallets:', error);
             setError('Error loading wallets from storage');
@@ -343,7 +343,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                         errorMessage = "Cannot connect to migration service. Please try again later.";
                     } else if (errorText.includes("Usage:") && errorText.includes("claim-accounts")) {
                         errorMessage = "Migration command failed. Your Morse wallet may not be in the correct format.";
-                } else {
+                    } else {
                         // Extraer la última línea significativa del error
                         const lines = errorText.split('\n').filter((line: string) => line.trim() !== '');
                         if (lines.length > 0) {
@@ -479,8 +479,8 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                                         balanceElements.forEach((element, index) => {
                                                             if (element) {
                                                                 element.innerText = balanceNums[index].toLocaleString('en-US', {
-                                                            minimumFractionDigits: 2,
-                                                            maximumFractionDigits: 2
+                                                                    minimumFractionDigits: 2,
+                                                                    maximumFractionDigits: 2
                                                                 });
                                                             }
                                                         });
@@ -592,7 +592,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                             </button>
                                         );
                                     })}
-                                    </div>
+                                </div>
                             </div>
 
                             {/* Shannon Wallet Cards (single select) */}
@@ -625,7 +625,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                             </button>
                                         );
                                     })}
-                                        </div>
+                                </div>
                                 {selectedShannonWallet && (
                                     <p className="text-blue-400/60 text-xs mt-2">This wallet must have funds to pay migration fees</p>
                                 )}
