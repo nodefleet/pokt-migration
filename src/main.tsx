@@ -58,16 +58,20 @@ const App: React.FC = () => {
 
             // Cargar balance
             const walletInfo = await walletService.getCurrentWalletInfo();
+            let currentBalance = '0';
+
             if (walletInfo) {
                 console.log(`💰 Balance loaded for ${address}: ${walletInfo.balance}`);
-                setBalance(walletInfo.balance);
+                currentBalance = walletInfo.balance;
+                setBalance(currentBalance);
             } else {
                 console.warn(`⚠️ No wallet info returned for address ${address}`);
                 // Intentar obtener balance directamente
                 const directBalance = await walletService.getBalance(address);
                 if (directBalance) {
                     console.log(`💰 Direct balance loaded: ${directBalance}`);
-                    setBalance(directBalance);
+                    currentBalance = directBalance;
+                    setBalance(currentBalance);
                 } else {
                     console.warn('⚠️ No se pudo obtener balance directo');
                     setBalance('0');
@@ -85,8 +89,9 @@ const App: React.FC = () => {
             }
 
             // Disparar evento de actualización para que otros componentes se actualicen
+            // Siempre usar el balance actualizado (currentBalance)
             window.dispatchEvent(new CustomEvent('wallet_data_updated', {
-                detail: { address, balance: walletInfo?.balance || '0' }
+                detail: { address, balance: currentBalance }
             }));
 
         } catch (error) {
@@ -315,6 +320,10 @@ const App: React.FC = () => {
                 console.log(`🆕 New import - set isMainnet: ${walletInfo.isMainnet}`);
             }
 
+            // Importante: Cargar los datos de la wallet antes de navegar
+            console.log('🔄 Loading wallet data for imported wallet:', walletInfo.address);
+            await loadWalletData(walletInfo.address);
+
             console.log('🧭 Navigating to /wallet...');
             navigate('/wallet');
             console.log('✅ handleWalletImport COMPLETED successfully');
@@ -350,6 +359,10 @@ const App: React.FC = () => {
             setIsMainnet(walletInfo.isMainnet);
             await storageService.set('isMainnet', walletInfo.isMainnet);
             console.log(`💾 New wallet created - saving isMainnet: ${walletInfo.isMainnet}`);
+
+            // Importante: Cargar los datos de la wallet antes de navegar
+            console.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
+            await loadWalletData(walletInfo.address);
 
             navigate('/wallet');
 

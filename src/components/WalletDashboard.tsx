@@ -124,7 +124,14 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             // Obtener balance aunque estemos en modo offline (devolverá 0)
             const fetchedBalance = await walletManager.getBalance(walletAddress);
             console.log(`💰 Fetched balance for ${walletAddress}: ${fetchedBalance}`);
+
+            // Actualizar el balance siempre, incluso cuando es 0
             setFormattedBalanceValue(formatBalance(fetchedBalance));
+
+            // Disparar evento de actualización para que otros componentes se actualicen
+            window.dispatchEvent(new CustomEvent('wallet_balance_updated', {
+                detail: { address: walletAddress, balance: fetchedBalance }
+            }));
 
             // Intentar obtener transacciones solo si no estamos en modo offline
             if (!isOffline) {
@@ -169,9 +176,11 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
     // Actualizar cuando cambian las props
     useEffect(() => {
-        // Actualizar el balance formateado cuando cambia la prop balance
-        setFormattedBalanceValue(formatBalance(balance));
-        console.log('⚡ WalletDashboard: Balance prop updated:', balance);
+        // Siempre actualizar el balance formateado, incluso cuando es 0
+        if (balance !== undefined) {
+            setFormattedBalanceValue(formatBalance(balance));
+            console.log('⚡ WalletDashboard: Balance prop updated:', balance);
+        }
     }, [balance]);
 
     // Efecto para obtener balance y transacciones
@@ -216,7 +225,9 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             // Solo actualizar si es para nuestra wallet actual
             if (address === walletAddress) {
+                // Siempre actualizar el balance, incluso si es 0
                 setFormattedBalanceValue(formatBalance(balance));
+                console.log(`💰 Balance updated to: ${balance} (formatted: ${formatBalance(balance)})`);
             }
         };
 
@@ -224,9 +235,13 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         window.addEventListener('storageUpdate', handleStorageUpdate);
         window.addEventListener('wallet_data_updated', handleWalletDataUpdate as EventListener);
 
+        // También escuchar el evento wallet_balance_updated
+        window.addEventListener('wallet_balance_updated', handleWalletDataUpdate as EventListener);
+
         return () => {
             window.removeEventListener('storageUpdate', handleStorageUpdate);
             window.removeEventListener('wallet_data_updated', handleWalletDataUpdate as EventListener);
+            window.removeEventListener('wallet_balance_updated', handleWalletDataUpdate as EventListener);
         };
     }, [fetchBalanceAndTransactions, walletAddress]);
 
