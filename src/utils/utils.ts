@@ -1,9 +1,10 @@
 /**
  * Formatea una cantidad de POKT para su visualización
  * @param balanceInUpokt Balance en uPOKT (1 POKT = 1,000,000 uPOKT)
+ * @param isMainnet Indica si se está usando mainnet (true) o testnet (false)
  * @returns Una cadena formateada con el balance en POKT
  */
-export const formatBalance = (balanceInUpokt: string): string => {
+export const formatBalance = (balanceInUpokt: string, isMainnet: boolean = false): string => {
     // Verificar que el balance sea válido
     if (!balanceInUpokt || isNaN(Number(balanceInUpokt))) {
         return '0.00';

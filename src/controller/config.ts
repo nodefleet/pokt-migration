@@ -13,7 +13,7 @@ export const NETWORKS = {
         TESTNET: {
             name: 'Shannon Testnet',
             rpcUrls: [
-                'https://shannon-grove-rpc.testnet.poktroll.com/',
+                'https://shannon-testnet-grove-rpc.beta.poktroll.com',
             ],
             chainId: 'shannon-testnet',
             symbol: 'POKT',
