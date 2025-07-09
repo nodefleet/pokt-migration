@@ -183,34 +183,70 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
         try {
             setLoading(true);
             // 1) Importar en WalletService
-            await onWalletImport(shannonInput, shannonPassword, 'shannon');
+            const importResult = await onWalletImport(shannonInput, shannonPassword, 'shannon');
 
-            // 2) Guardar en storage
+            // Verificar si es un mnemónico (12 o 24 palabras)
+            const inputText = shannonInput.trim();
+            const words = inputText.split(/\s+/);
+            const isMnemonic = words.length === 12 || words.length === 24;
+
+            // 2) Guardar en storage con el formato correcto
+            const timestamp = Date.now();
+            let walletObj = null;
+
+            if (isMnemonic) {
+                // Si es un mnemónico, guardarlo con el formato correcto
+                walletObj = {
+                    id: `shannon_${timestamp}`,
+                    privateKey: inputText,
+                    serialized: inputText,
+                    network: "shannon",
+                    timestamp: timestamp,
+                    parsed: { address: importResult?.address || '' },
+                    mnemonic: inputText
+                };
+            } else {
+                // Para otros formatos, mantener el comportamiento original
+                let parsed: any = null;
+                try { parsed = JSON.parse(inputText); } catch { }
+
+                walletObj = {
+                    id: `shannon_${timestamp}`,
+                    serialized: inputText,
+                    network: "shannon",
+                    timestamp: timestamp,
+                    parsed
+                };
+            }
+
+            // Obtener wallets existentes
             const existing: any[] = (await storageService.get<any[]>('shannon_wallets')) || [];
-            let parsed: any = null;
-            try { parsed = JSON.parse(shannonInput.trim()); } catch { }
 
-            // Derive address for duplicate detection
-            const addr = parsed?.address || '';
-
+            // Verificar duplicados
+            const addr = walletObj.parsed?.address || '';
             const isDuplicate = existing.some((w: any) =>
-                w.serialized === shannonInput.trim() ||
+                w.serialized === inputText ||
                 (addr && w.parsed?.address === addr)
             );
 
             if (!isDuplicate) {
-                existing.push({
-                    id: 'shannon_' + Date.now(),
-                    serialized: shannonInput.trim(),
-                    parsed,
-                    network: 'shannon',
-                    timestamp: Date.now()
-                });
+                existing.push(walletObj);
+                await storageService.set('shannon_wallets', existing);
+
+                // Si es un mnemónico, también guardar en shannon_wallet
+                if (isMnemonic) {
+                    await storageService.set('shannon_wallet', {
+                        serialized: inputText,
+                        privateKey: inputText,
+                        network: "shannon",
+                        timestamp: timestamp,
+                        parsed: { address: importResult?.address || '' },
+                        mnemonic: inputText
+                    });
+                }
             } else {
                 console.log(`⚠️ Shannon wallet already imported (addr: ${addr || 'unknown'}) – skipping`);
             }
-
-            await storageService.set('shannon_wallets', existing);
 
             setShannonWalletList(existing);
 
