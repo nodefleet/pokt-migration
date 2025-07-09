@@ -212,9 +212,6 @@ const App: React.FC = () => {
                 const morseWallet = await storageService.get<StoredWallet>('morse_wallet');
                 const shannonWallet = await storageService.get<StoredWallet>('shannon_wallet');
 
-                console.log('Morse wallet from storage:', morseWallet);
-                console.log('Shannon wallet from storage:', shannonWallet);
-
                 if (morseWallet || shannonWallet) {
                     const lastWallet = morseWallet && shannonWallet
                         ? morseWallet.timestamp > shannonWallet.timestamp
@@ -370,14 +367,6 @@ const App: React.FC = () => {
 
             // Usar el método createWallet del walletService
             const walletInfo = await walletService.createWallet(password, network || 'shannon', false);
-
-            // Guardar en storage con la configuración detectada
-            await storageService.set(`${walletInfo.network}_wallet`, {
-                serialized: '', // La wallet creada no tiene mnemónico para guardar
-                network: walletInfo.network,
-                timestamp: Date.now(),
-                parsed: { address: walletInfo.address }
-            });
 
             setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
             setNetworkType(walletInfo.network);

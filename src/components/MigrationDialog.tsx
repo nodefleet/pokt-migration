@@ -98,7 +98,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
         if (isMainnet === 'true') {
             link = 'https://faucet.pocket.network';
         } else {
-            link = 'https://faucet.testnet.poktroll.com/mact/';
+            link = 'https://faucet.beta.testnet.pokt.network/mact/';
         }
         console.log(`🔍 link: ${link}`);
         setLink(link);
@@ -319,9 +319,8 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             // Preparar payload
             const shannonRaw = await storageService.get<any>('shannon_wallets');
             const shannonStoredObj = Array.isArray(shannonRaw) ? shannonRaw.find((s: any) => s.id === shannonWallet.id) : null;
-            const shannonSignature = shannonStoredObj?.serialized || '';
+            let shannonSignature = shannonStoredObj?.serialized || '';
             const isMainnet = await storageService.get<string>('isMainnet') as string;
-
             const migrationData = {
                 morseWallets: selectedMorse.map((w: WalletOption) => w.privateKey as string),
                 shannonAddress: {
