@@ -320,7 +320,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             const shannonRaw = await storageService.get<any>('shannon_wallets');
             const shannonStoredObj = Array.isArray(shannonRaw) ? shannonRaw.find((s: any) => s.id === shannonWallet.id) : null;
             const shannonSignature = shannonStoredObj?.serialized || '';
-            const isMainnet = await storageService.get<boolean>('isMainnet') as boolean;
+            const isMainnet = await storageService.get<string>('isMainnet') as string;
 
             const migrationData = {
                 morseWallets: selectedMorse.map((w: WalletOption) => w.privateKey as string),
@@ -328,7 +328,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                     address: shannonWallet.address,
                     signature: shannonSignature || (shannonWallet.privateKey || '')
                 },
-                network: isMainnet ? 'mainnet' : 'beta'
+                network: isMainnet === 'true' ? 'mainnet' : 'beta'
             };
 
             // Enviar
