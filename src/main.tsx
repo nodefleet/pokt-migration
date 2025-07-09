@@ -330,12 +330,8 @@ const App: React.FC = () => {
             }
 
             // Importante: Cargar los datos de la wallet antes de navegar
-            console.log('🔄 Loading wallet data for imported wallet:', walletInfo.address);
             await loadWalletData(walletInfo.address);
-
-            console.log('🧭 Navigating to /wallet...');
             navigate('/wallet');
-            console.log('✅ handleWalletImport COMPLETED successfully');
 
             trackEvent('wallet_imported', {
                 network_type: walletInfo.network,

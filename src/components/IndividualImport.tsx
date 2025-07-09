@@ -299,7 +299,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 >
                     <i className="fas fa-exclamation-triangle text-yellow-400 text-xl mr-4 mt-1"></i>
                     <div>
-                        <h3 className="font-semibold mb-1">Red Morse in Migration</h3>
+                        <h3 className="font-semibold mb-1">Morse network in Migration</h3>
                         <p className="text-sm">
                             {ERROR_MESSAGES.MORSE_DEPRECATED}
                         </p>
@@ -620,7 +620,7 @@ word1 word2 word3 ... word24
                                                     <span>Importing...</span>
                                                 </div>
                                             ) : (
-                                                'Import Wallet Shannon'
+                                                'Import Shannon Wallet'
                                             )}
                                         </motion.button>
 

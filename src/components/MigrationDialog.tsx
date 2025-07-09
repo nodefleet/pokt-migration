@@ -142,7 +142,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                             <div class="text-white/80 text-xs pl-6 mt-1">
                                 <p class="mb-1">You need to receive MACT tokens to activate your account.</p>
                                 <a 
-                                    href="https://faucet.beta.testnet.pokt.network/mact/" 
+                                    href="https://faucet.pocket.network" 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     class="block text-center mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-xs font-medium"
@@ -502,7 +502,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                                     // Actualizar el elemento DOM directamente con el balance actual
                                                     const balanceElements = selectedWallets.map((w: WalletOption) => document.getElementById(`morseBalanceDisplay-${w.id}`));
                                                     if (balanceElements && balances) {
-                                                        const balanceNums = balances.map(balance => parseFloat(balance));
+                                                        const balanceNums = balances.map(balance => parseFloat(balance) / 1_000_000); // Convertir de uPOKT a POKT
                                                         balanceElements.forEach((element, index) => {
                                                             if (element) {
                                                                 element.innerText = balanceNums[index].toLocaleString('en-US', {
@@ -521,7 +521,8 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                                     try {
                                                         const data = JSON.parse(morseWalletData.serialized);
                                                         if (data && data.balance) {
-                                                            const balanceNum = parseFloat(data.balance);
+                                                            // Convertir de uPOKT a POKT (1 POKT = 1,000,000 uPOKT)
+                                                            const balanceNum = parseFloat(data.balance) / 1_000_000;
                                                             morseBalance = balanceNum.toLocaleString('en-US', {
                                                                 minimumFractionDigits: 2,
                                                                 maximumFractionDigits: 2
