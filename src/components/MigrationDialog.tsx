@@ -162,7 +162,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                             <div class="text-white/80 text-xs pl-6 mt-1">
                                 <p class="mb-1">You need to receive MACT tokens to activate your account.</p>
                                 <a 
-                                    href="${link}" 
+                                    href="https://faucet.beta.testnet.pokt.network/mact/" 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     class="block text-center mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-xs font-medium"
