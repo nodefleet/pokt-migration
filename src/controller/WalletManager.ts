@@ -346,7 +346,20 @@ export class WalletManager {
                 return "0";
             }
 
-            // Consultar directamente a la API de PokTradar
+            // Si estamos en Shannon, intentar usar directamente el cliente RPC
+            if (this.networkType === 'shannon' && this.shannonWallet) {
+                try {
+                    console.log(`🔍 Fetching Shannon balance using ShannonWallet for ${address}`);
+                    const balance = await this.shannonWallet.getBalance(address);
+                    console.log(`✅ Shannon balance: ${balance}`);
+                    return balance;
+                } catch (error) {
+                    console.error('Error getting balance from Shannon RPC:', error);
+                    console.log('Falling back to PokTradar API...');
+                }
+            }
+
+            // Consultar directamente a la API de PokTradar como respaldo
             const url = `https://poktradar.io/api/address/balance?address=${address}`;
             console.log(`🔍 Fetching balance from PokTradar API: ${url}`);
 
@@ -360,7 +373,7 @@ export class WalletManager {
             const data = await response.json();
             // El API de PokTradar devuelve el balance en el campo balance
             const balance = data.balance || "0";
-            console.log(`✅ Balance: ${balance}`);
+            console.log(`✅ Balance from PokTradar: ${balance}`);
             return balance;
         } catch (error) {
             console.error('Error getting balance:', error);
