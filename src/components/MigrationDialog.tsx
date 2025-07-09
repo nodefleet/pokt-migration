@@ -88,6 +88,19 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             loadWallets();
         }
     }, [isOpen]);
+    const [link, setLink] = useState<string>('');
+
+    useEffect(() => {
+        const isMainnet = storageService.getSync<string>('isMainnet') as string;
+        let link = '';
+        if (isMainnet === 'true') {
+            link = 'https://faucet.pocket.network';
+        } else {
+            link = 'https://faucet.testnet.poktroll.com/mact/';
+        }
+        console.log(`🔍 link: ${link}`);
+        setLink(link);
+    }, [isOpen]);
 
     // Nuevo useEffect para verificar la cuenta Shannon automáticamente cuando hay una wallet seleccionada
     useEffect(() => {
@@ -113,6 +126,8 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                 </div>
             `;
         }
+        const isMainnet = storageService.getSync<boolean>('isMainnet') as boolean;
+        console.log(`🔍 isMainnet: ${isMainnet}`);
 
         // Verify account exists
         fetch(`https://shannon-grove-api.mainnet.poktroll.com/cosmos/auth/v1beta1/accounts/${shannonWallet.address}`)
@@ -140,12 +155,12 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                             <div class="text-white/80 text-xs pl-6 mt-1">
                                 <p class="mb-1">You need to receive MACT tokens to activate your account.</p>
                                 <a 
-                                    href="https://faucet.pocket.network" 
+                                    href="${link}" 
                                     target="_blank" 
                                     rel="noopener noreferrer"
                                     class="block text-center mt-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-white text-xs font-medium"
                                 >
-                                    Click here to go to the MACT faucet
+                                    Click here to go to the MACT faucet ${link}
                                 </a>
                             </div>
                         `;
@@ -395,27 +410,6 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
     const handleClose = () => {
         reset();
         onClose();
-    };
-
-    // Functions to handle wallet creation/import navigation
-    const handleCreateMorseWallet = () => {
-        onClose();
-        navigate('/import/individual?network=morse&action=create');
-    };
-
-    const handleImportMorseWallet = () => {
-        onClose();
-        navigate('/import/individual?network=morse&action=import');
-    };
-
-    const handleCreateShannonWallet = () => {
-        onClose();
-        navigate('/import/individual?network=shannon&action=create');
-    };
-
-    const handleImportShannonWallet = () => {
-        onClose();
-        navigate('/import/individual?network=shannon&action=import');
     };
 
     if (!isOpen) return null;
