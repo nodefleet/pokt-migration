@@ -126,31 +126,31 @@ export class WalletService {
             await storageService.set(STORAGE_KEYS.WALLET_ADDRESS, address);
 
             // Guardar wallet completa con clave privada
-            if (network === 'shannon') {
-                await storageService.set('shannon_wallet', {
-                    serialized: serializedWallet,
-                    privateKey: privateKey, // Guardar la clave privada
-                    network: 'shannon',
-                    timestamp: Date.now(),
-                    parsed: { address }
-                });
+            // if (network === 'shannon') {
+            //     await storageService.set('shannon_wallet', {
+            //         serialized: serializedWallet,
+            //         privateKey: privateKey, // Guardar la clave privada
+            //         network: 'shannon',
+            //         timestamp: Date.now(),
+            //         parsed: { address }
+            //     });
 
-                // También guardar en el array de wallets si existe
-                const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
-                if (Array.isArray(shannonWallets)) {
-                    // Añadir nueva wallet
-                    shannonWallets.push({
-                        id: `shannon_${Date.now()}`,
-                        serialized: serializedWallet,
-                        privateKey: privateKey, // Guardar la clave privada
-                        network: 'shannon',
-                        timestamp: Date.now(),
-                        parsed: { address }
-                    });
+            //     // También guardar en el array de wallets si existe
+            //     const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
+            //     if (Array.isArray(shannonWallets)) {
+            //         // Añadir nueva wallet
+            //         shannonWallets.push({
+            //             id: `shannon_${Date.now()}`,
+            //             serialized: serializedWallet,
+            //             privateKey: privateKey, // Guardar la clave privada
+            //             network: 'shannon',
+            //             timestamp: Date.now(),
+            //             parsed: { address }
+            //         });
 
-                    await storageService.set('shannon_wallets', shannonWallets);
-                }
-            }
+            //         await storageService.set('shannon_wallets', shannonWallets);
+            //     }
+            // }
 
             // Obtener balance
             const balance = await this.getBalance(address);

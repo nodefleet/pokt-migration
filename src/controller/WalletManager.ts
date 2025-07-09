@@ -3,7 +3,7 @@ import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import { Tx } from "cosmjs-types/cosmos/tx/v1beta1/tx.js";
 import { MsgSend } from "cosmjs-types/cosmos/bank/v1beta1/tx.js";
 import { NETWORKS, ERROR_MESSAGES } from "./config";
-import { ShannonWallet } from "./ShannonWallet";
+import { ShannonWallet, createWalletDirect, decryptWallet } from "./ShannonWallet";
 
 export interface Transaction {
     hash: string;
@@ -222,10 +222,48 @@ export class WalletManager {
     /**
      * Crea una nueva wallet
      * @param password - Contraseña para encriptar la wallet
-     * @returns {Promise<{address: string, serializedWallet: string, privateKey: string}>} La dirección, la wallet serializada y la clave privada
+     * @returns {Promise<{address: string; serializedWallet: string; privateKey: string}>} La dirección, la wallet serializada y la clave privada
      */
     async createWallet(password: string): Promise<{ address: string; serializedWallet: string; privateKey: string }> {
         try {
+            // Si es Shannon, usar la función directa de ShannonWallet (sin hooks)
+            if (this.networkType === 'shannon') {
+                console.log("🔵 Usando ShannonWallet.createWalletDirect para crear wallet");
+
+                // Llamar a la función directa que no usa hooks
+                const result = await createWalletDirect(
+                    password,
+                    this.networkMode === 'MAINNET'
+                );
+
+                console.log("✅ Wallet creada exitosamente con ShannonWallet:", result.address);
+
+                // Desencriptar para obtener el mnemónico
+                const walletInfo = await decryptWallet(result.serialized, password);
+                console.log("✅ Wallet desencriptada exitosamente");
+
+                // Asignar la wallet al WalletManager para mantener compatibilidad
+                this.wallet = await DirectSecp256k1HdWallet.fromMnemonic(walletInfo.mnemonic, {
+                    prefix: this.getCurrentNetwork().prefix
+                });
+
+                // Re-inicializar cliente con signing client si no estamos en modo offline
+                if (!this.isForcedOffline) {
+                    try {
+                        await this.initializeClient();
+                    } catch (error) {
+                        console.warn("Could not initialize client after wallet creation:", error);
+                    }
+                }
+
+                return {
+                    address: result.address,
+                    serializedWallet: result.serialized,
+                    privateKey: walletInfo.mnemonic
+                };
+            }
+
+            // Para Morse, mantener el comportamiento original
             const network = this.getCurrentNetwork();
             this.wallet = await DirectSecp256k1HdWallet.generate(24, { prefix: network.prefix });
             const [firstAccount] = await this.wallet.getAccounts();

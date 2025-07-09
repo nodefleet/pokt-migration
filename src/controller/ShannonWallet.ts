@@ -210,18 +210,45 @@ export const useCreateWallet = (): UseMutationResult<{ address: string; serializ
                 const address = await getAddress(wallet);
                 console.log("Address obtained:", address);
 
+                // USAR EXPLÍCITAMENTE LA FUNCIÓN decryptWallet PARA OBTENER EL MNEMÓNICO
+                console.log("🔑 Usando decryptWallet para obtener el mnemónico...");
+                const walletInfo = await decryptWallet(serializedWallet, password);
+                const mnemonic = walletInfo.mnemonic;
+                console.log("✅ Mnemónico obtenido correctamente usando decryptWallet");
+
                 // Actualizar el estado global
                 setWallet({ address, serialized: serializedWallet });
                 console.log("Wallet saved in store");
 
-                // Guardar en localStorage también para persistencia
+                // Timestamp para el ID y otros campos
+                const timestamp = Date.now();
+
+                // Guardar en el formato exact requerido para shannon_wallets (array)
+                const walletObj = {
+                    id: `shannon_${timestamp}`,
+                    privateKey: mnemonic,
+                    serialized: mnemonic,
+                    network: "shannon",
+                    timestamp: timestamp,
+                    parsed: { address },
+                    mnemonic: mnemonic
+                };
+
+                // Obtener wallets existentes o inicializar array vacío
+                const existingWallets = await storageService.get<Array<any>>('shannon_wallets') || [];
+                await storageService.set('shannon_wallets', [...existingWallets, walletObj]);
+                console.log("Wallet saved in shannon_wallets array with mnemonic and privateKey");
+
+                // Guardar también como objeto individual en shannon_wallet
                 await storageService.set('shannon_wallet', {
-                    serialized: serializedWallet,
-                    network: 'shannon',
-                    timestamp: Date.now(),
-                    parsed: { address }
+                    serialized: mnemonic,
+                    privateKey: mnemonic,
+                    network: "shannon",
+                    timestamp: timestamp,
+                    parsed: { address },
+                    mnemonic: mnemonic
                 });
-                console.log("Wallet saved in localStorage");
+                console.log("Wallet saved in shannon_wallet with mnemonic and privateKey");
 
                 return { address, serialized: serializedWallet, isMainnet };
             } catch (error) {
@@ -256,6 +283,151 @@ export function useImportMnemonic(): UseMutationResult<{ address: string; serial
             return { address, serialized: serializedWallet, isMainnet };
         }
     });
+}
+
+// Función para desencriptar una wallet serializada con una contraseña específica
+export async function decryptWallet(serialized: string, password: string = "CREA"): Promise<{ address: string; mnemonic: string }> {
+    try {
+        console.log("🔓 Intentando desencriptar wallet con contraseña...");
+        const wallet = await DirectSecp256k1HdWallet.deserialize(serialized, password);
+        const [account] = await wallet.getAccounts();
+
+        if (!account) {
+            throw new Error("No se pudo obtener la cuenta de la wallet desencriptada");
+        }
+
+        // Obtener el mnemónico
+        const mnemonic = wallet.mnemonic;
+
+        console.log("✅ Wallet desencriptada exitosamente:", {
+            address: account.address,
+            hasMnemonic: !!mnemonic
+        });
+
+        return {
+            address: account.address,
+            mnemonic: mnemonic
+        };
+    } catch (error) {
+        console.error("❌ Error al desencriptar la wallet:", error);
+        throw new Error(`No se pudo desencriptar la wallet: ${(error as Error).message}`);
+    }
+}
+
+// Función para desencriptar y actualizar wallets existentes con el mnemónico
+export async function updateWalletsWithMnemonic(password: string = "CREA"): Promise<boolean> {
+    try {
+        console.log("🔄 Actualizando wallets existentes con mnemónicos...");
+
+        // Obtener wallets existentes
+        const existingWallets = await storageService.get<Array<any>>('shannon_wallets') || [];
+        const currentWallet = await storageService.get<any>('shannon_wallet');
+
+        let updated = false;
+
+        // Actualizar wallets en el array
+        if (existingWallets.length > 0) {
+            const updatedWallets = await Promise.all(existingWallets.map(async (wallet) => {
+                // Solo actualizar si no tiene mnemónico
+                if (!wallet.mnemonic && wallet.serialized) {
+                    try {
+                        const { mnemonic } = await decryptWallet(wallet.serialized, password);
+                        return {
+                            ...wallet,
+                            mnemonic
+                        };
+                    } catch (error) {
+                        console.warn(`No se pudo desencriptar wallet ${wallet.id}:`, error);
+                        return wallet;
+                    }
+                }
+                return wallet;
+            }));
+
+            await storageService.set('shannon_wallets', updatedWallets);
+            updated = true;
+            console.log("✅ Array de wallets actualizado con mnemónicos");
+        }
+
+        // Actualizar wallet individual
+        if (currentWallet && !currentWallet.mnemonic && currentWallet.serialized) {
+            try {
+                const { mnemonic } = await decryptWallet(currentWallet.serialized, password);
+                await storageService.set('shannon_wallet', {
+                    ...currentWallet,
+                    mnemonic
+                });
+                updated = true;
+                console.log("✅ Wallet individual actualizada con mnemónico");
+            } catch (error) {
+                console.warn("No se pudo actualizar la wallet individual:", error);
+            }
+        }
+
+        return updated;
+    } catch (error) {
+        console.error("❌ Error al actualizar wallets:", error);
+        return false;
+    }
+}
+
+// Función directa para crear wallet (sin hooks) que puede ser llamada desde cualquier lugar
+export async function createWalletDirect(password: string, isMainnet: boolean = false): Promise<{ address: string; serialized: string; isMainnet: boolean }> {
+    console.log("Creating new Shannon wallet directly (no hooks)...");
+    try {
+        const prefix = isMainnet === true ? NETWORKS.SHANNON.MAINNET.prefix : NETWORKS.SHANNON.TESTNET.prefix;
+        console.log(`Using prefix: ${prefix} (${isMainnet === true ? 'mainnet' : 'testnet'})`);
+
+        const wallet = await DirectSecp256k1HdWallet.generate(24, {
+            prefix: prefix
+        });
+        console.log("Wallet generated successfully with prefix:", prefix);
+
+        const serializedWallet = await wallet.serialize(password);
+        console.log("Wallet serialized successfully");
+
+        const address = await getAddress(wallet);
+        console.log("Address obtained:", address);
+
+        // USAR EXPLÍCITAMENTE LA FUNCIÓN decryptWallet PARA OBTENER EL MNEMÓNICO
+        console.log("🔑 Usando decryptWallet para obtener el mnemónico...");
+        const walletInfo = await decryptWallet(serializedWallet, password);
+        const mnemonic = walletInfo.mnemonic;
+        console.log("✅ Mnemónico obtenido correctamente usando decryptWallet");
+
+        // Timestamp para el ID y otros campos
+        const timestamp = Date.now();
+
+        // Guardar en el formato exact requerido para shannon_wallets (array)
+        const walletObj = {
+            id: `shannon_${timestamp}`,
+            serialized: mnemonic,
+            network: "shannon",
+            timestamp: timestamp,
+            parsed: { address },
+            mnemonic: mnemonic // Guardar también el mnemónico
+        };
+
+        // Obtener wallets existentes o inicializar array vacío
+        const existingWallets = await storageService.get<Array<any>>('shannon_wallets') || [];
+        await storageService.set('shannon_wallets', [...existingWallets, walletObj]);
+        console.log("Wallet saved in shannon_wallets array with mnemonic and privateKey");
+
+        // Guardar también como objeto individual en shannon_wallet
+        await storageService.set('shannon_wallet', {
+            serialized: mnemonic,
+            network: "shannon",
+            timestamp: timestamp,
+            parsed: { address },
+            mnemonic: mnemonic
+        });
+        console.log("Wallet saved in shannon_wallet with mnemonic and privateKey");
+
+        return { address, serialized: serializedWallet, isMainnet };
+    } catch (error) {
+        console.error("Error creating wallet directly:", error);
+        throw error;
+    }
 }
 
 export class ShannonWallet {
