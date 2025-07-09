@@ -41,14 +41,14 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
             // Cargar wallets
             await loadAvailableWallets();
 
-            // FORZAR MAINNET SIEMPRE
-            console.log('🎯 WalletSelector: FORZANDO MAINNET por defecto');
-            setSelectedMainnet(true);
-            await storageService.set('isMainnet', true);
+            // Cargar la configuración guardada de isMainnet
+            const savedIsMainnet = await storageService.get<boolean>('isMainnet') as boolean;
+            console.log('🎯 WalletSelector: Cargando configuración de red:', savedIsMainnet);
+            setSelectedMainnet(savedIsMainnet !== null ? savedIsMainnet : false);
 
             // Notificar al padre si existe el callback
             if (onMainnetChange) {
-                onMainnetChange(true);
+                onMainnetChange(savedIsMainnet !== null ? savedIsMainnet : false);
             }
         };
 
@@ -67,15 +67,12 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         };
     }, []); // SIN DEPENDENCIAS para que solo se ejecute una vez
 
-    // FORZAR MAINNET SIEMPRE
+    // Sincronizar con cambios externos de isMainnet
     useEffect(() => {
-        setSelectedMainnet(true);
-
-        // Solo notificar si NO es ya mainnet
-        if (isMainnet !== true && onMainnetChange) {
-            onMainnetChange(true);
+        if (isMainnet !== undefined && isMainnet !== selectedMainnet) {
+            setSelectedMainnet(isMainnet);
         }
-    }, [isMainnet, onMainnetChange]);
+    }, [isMainnet, selectedMainnet]);
 
     const loadAvailableWallets = async () => {
         // Usar el nuevo método del walletService para obtener todas las wallets

@@ -11,11 +11,11 @@ export const NETWORKS = {
             prefix: 'pokt'
         },
         TESTNET: {
-            name: 'Shannon Mainnet',
+            name: 'Shannon Testnet',
             rpcUrls: [
-                'https://shannon-grove-rpc.mainnet.poktroll.com/',
+                'https://shannon-grove-rpc.testnet.poktroll.com/',
             ],
-            chainId: 'shannon-mainnet',
+            chainId: 'shannon-testnet',
             symbol: 'POKT',
             decimals: 6,
             prefix: 'pokt'
@@ -47,7 +47,7 @@ export const NETWORKS = {
 
 // Para compatibilidad con código existente
 export const MAINNET = NETWORKS.SHANNON.MAINNET;
-export const TESTNET = NETWORKS.SHANNON.MAINNET;
+export const TESTNET = NETWORKS.SHANNON.TESTNET;
 
 export const DEFAULT_NETWORK = NETWORKS.SHANNON.MAINNET;
 
