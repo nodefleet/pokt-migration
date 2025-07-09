@@ -33,7 +33,7 @@ export class WalletManager {
 
     constructor(networkType: NetworkType = 'shannon', isTestnet: boolean = true) {
         this.networkType = networkType;
-        this.networkMode = 'MAINNET'; // FORZAR MAINNET SIEMPRE
+        this.networkMode = isTestnet ? 'TESTNET' : 'MAINNET';
 
         // Mostrar warning para Morse
         if (networkType === 'morse') {
@@ -132,9 +132,9 @@ export class WalletManager {
             return; // No intentar conexión RPC para Morse
         }
 
-        // CORREGIR: Establecer networkMode ANTES de crear ShannonWallet
+        // Establecer networkMode según el parámetro isTestnet
         this.networkType = networkType;
-        this.networkMode = 'MAINNET'; // FORZAR MAINNET SIEMPRE
+        this.networkMode = isTestnet ? 'TESTNET' : 'MAINNET';
         this.lastSuccessfulRpcUrl = null; // Resetear la URL exitosa al cambiar de red
         this.isForcedOffline = false; // Reintentar la conexión al cambiar de red
 
@@ -305,8 +305,7 @@ export class WalletManager {
 
             // Para Shannon, usamos la clase ShannonWallet
             if (this.networkType === 'shannon' && this.shannonWallet) {
-                // Hack para forzar mainnet - el método original usa la red configurada
-                this.networkMode = 'MAINNET'; // FORZAR MAINNET
+                // Usar la configuración de red actual
                 return await this.shannonWallet.importWallet(serialization);
             }
 

@@ -314,12 +314,12 @@ export class ShannonWallet {
             throw new Error(`Mnemonic phrase must have exactly 12 or 24 words. Has ${words.length} words.`);
         }
 
-        // FORZAR MAINNET con prefijo "pokt"
-        console.log('🔵 ShannonWallet.importWallet - FORZANDO prefijo MAINNET "pokt"');
-        const prefix = "pokt"; // FORZAR SIEMPRE prefijo de mainnet
+        // Usar el prefijo según la red configurada
+        console.log(`🔵 ShannonWallet.importWallet - Usando red ${this.networkMode}`);
+        const prefix = "pokt"; // El prefijo es el mismo para mainnet y testnet
 
         this.wallet = await DirectSecp256k1HdWallet.fromMnemonic(normalizedMnemonic, {
-            prefix: prefix // Usar prefijo mainnet forzado
+            prefix: prefix
         });
 
         // Obtener la dirección (no requiere conexión de red)
@@ -328,7 +328,7 @@ export class ShannonWallet {
             throw new Error("Could not obtain wallet account");
         }
 
-        console.log(`✅ Shannon wallet importada con prefijo MAINNET: ${account.address}`);
+        console.log(`✅ Shannon wallet importada con prefijo: ${account.address}`);
 
         // Intentar inicializar el cliente, pero no fallar si no puede conectar
         if (!this.client && !this.isOfflineMode) {
