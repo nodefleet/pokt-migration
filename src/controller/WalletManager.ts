@@ -382,15 +382,6 @@ export class WalletManager {
     }
 
     /**
-     * Detecta si es una dirección Morse (hex de 40 caracteres)
-     */
-    private isMorseAddress(address: string): boolean {
-        const cleanAddress = address.trim();
-        // Direcciones Morse son hex puro de 40 caracteres (sin prefijo)
-        return /^[0-9a-fA-F]{40}$/.test(cleanAddress);
-    }
-
-    /**
      * Obtiene las transacciones de una wallet
      * @param address - La dirección de la wallet
      * @returns {Promise<Transaction[]>} Lista de transacciones
