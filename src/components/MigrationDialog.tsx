@@ -56,6 +56,11 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             return "Zero claimable Morse accounts found in the snapshot. Your wallet may not be eligible for migration.";
         }
 
+        // Detectar específicamente el error "0/1 claimable Morse accounts"
+        if (errorText.includes("0/1 claimable Morse accounts found")) {
+            return "No eligible Morse accounts found in the migration snapshot. Your wallet may not be included in the migration list or may have already been migrated.";
+        }
+
         if (errorText.includes("connection refused") || errorText.includes("ECONNREFUSED")) {
             return "Cannot connect to migration service. Please try again later.";
         }
@@ -355,6 +360,8 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
                     if (errorText.includes("Zero claimable Morse accounts found")) {
                         errorMessage = "Zero claimable Morse accounts found in the snapshot. Your wallet may not be eligible for migration.";
+                    } else if (errorText.includes("0/1 claimable Morse accounts found")) {
+                        errorMessage = "No eligible Morse accounts found in the migration snapshot. Your wallet may not be included in the migration list or may have already been migrated.";
                     } else if (errorText.includes("connection refused") || errorText.includes("ECONNREFUSED")) {
                         errorMessage = "Cannot connect to migration service. Please try again later.";
                     } else if (errorText.includes("Usage:") && errorText.includes("claim-accounts")) {
@@ -386,6 +393,8 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                 if (errorMessage.includes('Zero claimable Morse accounts')) {
                     // Mostrar el mensaje exacto sin traducir
                     errorMessage = 'Zero claimable Morse accounts found in the snapshot. Check the logs and the input file before trying again.';
+                } else if (errorMessage.includes('0/1 claimable Morse accounts found')) {
+                    errorMessage = 'No eligible Morse accounts found in the migration snapshot. Your wallet may not be included in the migration list or may have already been migrated.';
                 } else if (errorMessage.includes('connection refused') || errorMessage.includes('ECONNREFUSED')) {
                     errorMessage = 'Cannot connect to migration service. Please try again later.';
                 }
