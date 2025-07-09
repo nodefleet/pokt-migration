@@ -128,7 +128,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             console.log(`💰 Fetched balance for ${walletAddress}: ${fetchedBalance}`);
 
             // Actualizar el balance siempre, incluso cuando es 0
-            setFormattedBalanceValue(formatBalance(fetchedBalance));
+            setFormattedBalanceValue(formatBalance(fetchedBalance, isMainnet));
 
             // Disparar evento de actualización para que otros componentes se actualicen
             window.dispatchEvent(new CustomEvent('wallet_balance_updated', {
@@ -180,10 +180,10 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     useEffect(() => {
         // Siempre actualizar el balance formateado, incluso cuando es 0
         if (balance !== undefined) {
-            setFormattedBalanceValue(formatBalance(balance));
+            setFormattedBalanceValue(formatBalance(balance, isMainnet));
             console.log('⚡ WalletDashboard: Balance prop updated:', balance);
         }
-    }, [balance]);
+    }, [balance, isMainnet]);
 
     // Efecto para obtener balance y transacciones
     useEffect(() => {
@@ -228,8 +228,8 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             // Solo actualizar si es para nuestra wallet actual
             if (address === walletAddress) {
                 // Siempre actualizar el balance, incluso si es 0
-                setFormattedBalanceValue(formatBalance(balance));
-                console.log(`💰 Balance updated to: ${balance} (formatted: ${formatBalance(balance)})`);
+                setFormattedBalanceValue(formatBalance(balance, isMainnet));
+                console.log(`💰 Balance updated to: ${balance} (formatted: ${formatBalance(balance, isMainnet)})`);
             }
         };
 
@@ -245,7 +245,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             window.removeEventListener('wallet_data_updated', handleWalletDataUpdate as EventListener);
             window.removeEventListener('wallet_balance_updated', handleWalletDataUpdate as EventListener);
         };
-    }, [fetchBalanceAndTransactions, walletAddress]);
+    }, [fetchBalanceAndTransactions, walletAddress, isMainnet]);
 
     // Función para intentar reconectar manualmente
     const handleReconnect = async () => {
