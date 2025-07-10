@@ -84,7 +84,6 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
         await storageService.set('isMainnet', true);
         console.log('🎯 IndividualImport: Estableciendo isMainnet=true por defecto al importar');
 
-
         setMorseLoading(true);
         setMorseError('');
         setError('');
@@ -93,44 +92,27 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             // Limpiar la entrada
             const inputText = morseInput.trim();
 
-            // Verificar si es un array de claves privadas en formato JSON
-            let privateKeys = [];
-
-            // Intentar parsear como JSON array primero
+            // Verificar si es un PPK file (armored keypair)
+            let isPPKFile = false;
             try {
                 const parsed = JSON.parse(inputText);
-                if (Array.isArray(parsed)) {
-                    privateKeys = parsed;
-                } else {
-                    // Si es un objeto JSON pero no un array, podría ser una sola clave
-                    privateKeys = [parsed];
-                }
+                isPPKFile = parsed.kdf && parsed.salt && parsed.ciphertext && parsed.hint;
             } catch (e) {
-                // Si no es JSON, tratar como una sola clave privada
-                privateKeys = [inputText];
+                // Not a JSON file, continue with normal processing
             }
 
-            console.log(`🔑 Procesando ${privateKeys.length} clave(s) privada(s)...`);
-
-            // Procesar cada clave privada
-            for (const key of privateKeys) {
-                // Si es un string, usarlo directamente
-                const privateKey = typeof key === 'string' ? key : (key.privateKey || key.priv || key);
-
-                if (!privateKey || typeof privateKey !== 'string') {
-                    console.warn('❌ Clave privada inválida, saltando:', key);
-                    continue;
-                }
-
-                // Limpiar la clave (quitar 0x si existe)
-                const cleanKey = privateKey.startsWith('0x') ? privateKey.substring(2) : privateKey;
-
+            if (isPPKFile) {
+                // Handle PPK file directly
+                console.log('🔐 Detectado archivo PPK, procesando directamente...');
+                
                 try {
-                    // Importar usando morseWalletService
-                    const result = await morseWalletService.importMorsePrivateKey(cleanKey, morsePassword.trim() || 'default');
+                    // Importar usando morseWalletService con el JSON completo
+                    const result = await morseWalletService.importMorsePrivateKey(inputText, morsePassword.trim() || 'default');
 
-                    console.log('✅ Wallet importada correctamente:', {
-                        address: result.address
+                    console.log('✅ Wallet PPK importada correctamente:', {
+                        address: result.address,
+                        serializedType: typeof result.serialized,
+                        serializedPreview: typeof result.serialized === 'string' ? result.serialized.substring(0, 100) + '...' : result.serialized
                     });
 
                     // Importar usando la función proporcionada
@@ -146,21 +128,103 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                     );
 
                     if (!isDuplicate) {
+                        // Parse the serialized data safely
+                        let parsedData;
+                        try {
+                            parsedData = JSON.parse(result.serialized);
+                        } catch (parseError) {
+                            console.warn('⚠️ Could not parse serialized data as JSON, using as string:', parseError);
+                            parsedData = { serialized: result.serialized };
+                        }
+
                         walletList.push({
-                            id: 'morse_' + Date.now() + Math.random().toString(16).slice(2, 6),
+                            id: 'morse_ppk_' + Date.now() + Math.random().toString(16).slice(2, 6),
                             serialized: result.serialized,
-                            parsed: JSON.parse(result.serialized),
+                            parsed: parsedData,
                             network: 'morse',
                             timestamp: Date.now()
                         });
                         await storageService.set('morse_wallets', walletList);
                         setMorseWalletList(walletList);
                     } else {
-                        console.log(`⚠️ Wallet ya importada (addr: ${result.address}) – saltando`);
+                        console.log(`⚠️ Wallet PPK ya importada (addr: ${result.address}) – saltando`);
                     }
-                } catch (keyError: any) {
-                    console.error('❌ Error importando clave privada:', keyError);
-                    // Continuar con la siguiente clave si hay error en una
+                } catch (ppkError: any) {
+                    console.error('❌ Error importando PPK:', ppkError);
+                    setMorseError(ppkError.message || 'Error importando archivo PPK');
+                    return;
+                }
+            } else {
+                // Handle regular private keys (existing logic)
+                // Verificar si es un array de claves privadas en formato JSON
+                let privateKeys = [];
+
+                // Intentar parsear como JSON array primero
+                try {
+                    const parsed = JSON.parse(inputText);
+                    if (Array.isArray(parsed)) {
+                        privateKeys = parsed;
+                    } else {
+                        // Si es un objeto JSON pero no un array, podría ser una sola clave
+                        privateKeys = [parsed];
+                    }
+                } catch (e) {
+                    // Si no es JSON, tratar como una sola clave privada
+                    privateKeys = [inputText];
+                }
+
+                console.log(`🔑 Procesando ${privateKeys.length} clave(s) privada(s)...`);
+
+                // Procesar cada clave privada
+                for (const key of privateKeys) {
+                    // Si es un string, usarlo directamente
+                    const privateKey = typeof key === 'string' ? key : (key.privateKey || key.priv || key);
+
+                    if (!privateKey || typeof privateKey !== 'string') {
+                        console.warn('❌ Clave privada inválida, saltando:', key);
+                        continue;
+                    }
+
+                    // Limpiar la clave (quitar 0x si existe)
+                    const cleanKey = privateKey.startsWith('0x') ? privateKey.substring(2) : privateKey;
+
+                    try {
+                        // Importar usando morseWalletService
+                        const result = await morseWalletService.importMorsePrivateKey(cleanKey, morsePassword.trim() || 'default');
+
+                        console.log('✅ Wallet importada correctamente:', {
+                            address: result.address
+                        });
+
+                        // Importar usando la función proporcionada
+                        await onWalletImport(result.serialized, morsePassword.trim() || 'default', 'morse');
+
+                        // Actualizar la lista de wallets
+                        const existing = (await storageService.get<any[]>('morse_wallets')) || [];
+                        const walletList = Array.isArray(existing) ? existing : [];
+
+                        // Evitar duplicados
+                        const isDuplicate = walletList.some((w: any) =>
+                            (w.parsed?.addr === result.address)
+                        );
+
+                        if (!isDuplicate) {
+                            walletList.push({
+                                id: 'morse_' + Date.now() + Math.random().toString(16).slice(2, 6),
+                                serialized: result.serialized,
+                                parsed: JSON.parse(result.serialized),
+                                network: 'morse',
+                                timestamp: Date.now()
+                            });
+                            await storageService.set('morse_wallets', walletList);
+                            setMorseWalletList(walletList);
+                        } else {
+                            console.log(`⚠️ Wallet ya importada (addr: ${result.address}) – saltando`);
+                        }
+                    } catch (keyError: any) {
+                        console.error('❌ Error importando clave privada:', keyError);
+                        // Continuar con la siguiente clave si hay error en una
+                    }
                 }
             }
 
@@ -440,7 +504,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                 >
                                     <div className="space-y-4">
                                         <p className="text-sm text-gray-400">
-                                            Import your Morse wallet using JSON keyfile only:
+                                            Import your Morse wallet using private key, JSON keyfile, or PPK armored keypair:
                                         </p>
 
                                         {/* Input para cargar archivo */}
@@ -513,7 +577,9 @@ PrivateKey1
 
 3. JSON with private key:
 {"privateKey": "1f8cbde30ef5a9db..."}
-'
+
+4. PPK armored keypair file (from "pocket accounts export"):
+{"kdf":"scrypt","salt":"...","ciphertext":"..."}'
                                                 className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300 resize-none min-h-[120px] text-sm font-mono"
                                                 value={morseInput}
                                                 onChange={(e) => setMorseInput(e.target.value)}
@@ -521,6 +587,27 @@ PrivateKey1
                                                 disabled={morseLoading}
                                                 whileFocus={{ scale: 1.01 }}
                                             />
+
+                                            {/* Password field for PPK files */}
+                                            <div className="relative">
+                                                <motion.input
+                                                    type={showPassword ? "text" : "password"}
+                                                    placeholder="Password (required for PPK files)"
+                                                    className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300 pr-12"
+                                                    value={morsePassword}
+                                                    onChange={(e) => setMorsePassword(e.target.value)}
+                                                    disabled={morseLoading}
+                                                    whileFocus={{ scale: 1.01 }}
+                                                />
+                                                <button
+                                                    type="button"
+                                                    className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 transition-colors"
+                                                    onClick={() => setShowPassword(!showPassword)}
+                                                    disabled={morseLoading}
+                                                >
+                                                    <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <motion.button
@@ -608,7 +695,7 @@ PrivateKey1
                                         <div className="space-y-2">
                                             <label className="block text-sm text-gray-300">
                                                 <i className="fas fa-file-upload mr-2"></i>
-                                                Load JSON keyfile:
+                                                Load keyfile (JSON or PPK format):
                                             </label>
                                             <input
                                                 type="file"
@@ -661,7 +748,7 @@ PrivateKey1
                                         <div className="space-y-2">
                                             <label className="block text-sm text-gray-300">
                                                 <i className="fas fa-paste mr-2"></i>
-                                                Paste mnemonic or JSON:
+                                                Paste private key, JSON, or PPK armored keypair:
                                             </label>
                                             <motion.textarea
                                                 placeholder='Options:
