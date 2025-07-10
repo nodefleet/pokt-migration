@@ -456,7 +456,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                             <i className="fas fa-exclamation-triangle text-red-500 mr-2"></i>
                             {privateKeyData && (
                                 privateKeyData.trim().split(/\s+/).length === 12 || privateKeyData.trim().split(/\s+/).length === 24
-                                    ? "Recovery Phrase - DANGER ZONE"
+                                    ? "Memonic Phrase - DANGER ZONE"
                                     : "Private Key - DANGER ZONE"
                             )}
                             {!privateKeyData && "Wallet Secrets - DANGER ZONE"}
