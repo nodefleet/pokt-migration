@@ -2,7 +2,7 @@ import { StargateClient, SigningStargateClient, IndexedTx } from '@cosmjs/starga
 import { DirectSecp256k1HdWallet } from '@cosmjs/proto-signing';
 import { Tx } from "cosmjs-types/cosmos/tx/v1beta1/tx.js";
 import { MsgSend } from "cosmjs-types/cosmos/bank/v1beta1/tx.js";
-import { NETWORKS, ERROR_MESSAGES } from "./config";
+import { NETWORKS, ERROR_MESSAGES, DEBUG_CONFIG } from "./config";
 import { ShannonWallet, createWalletDirect, decryptWallet } from "./ShannonWallet";
 
 export interface Transaction {
@@ -64,15 +64,18 @@ export class WalletManager {
         // Intentar conectar a cada RPC URL hasta que uno funcione
         for (const rpcUrl of network.rpcUrls) {
             try {
+                DEBUG_CONFIG.log(`Attempting to connect to: ${rpcUrl}`);
                 this.connectionAttempts++;
-                console.log(`Attempting to connect to: ${rpcUrl}`);
 
                 // Usar el último RPC exitoso primero si está disponible
-                const urlToUse = this.lastSuccessfulRpcUrl !== null ? this.lastSuccessfulRpcUrl : rpcUrl;
+                const urlToUse = this.lastSuccessfulRpcUrl && network.rpcUrls.includes(this.lastSuccessfulRpcUrl) 
+                    ? this.lastSuccessfulRpcUrl 
+                    : rpcUrl;
 
-                // Establecer timeout para la conexión
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos timeout
+                // Configurar timeout para la conexión
+                const timeoutId = setTimeout(() => {
+                    DEBUG_CONFIG.warn(`Connection timeout for ${urlToUse}`);
+                }, 10000); // 10 segundos
 
                 // Verificar si el error es de CORS y mostrar mensaje específico
                 if (lastError && lastError.toString().includes("CORS")) {
@@ -82,8 +85,9 @@ export class WalletManager {
                 this.client = await StargateClient.connect(urlToUse);
                 clearTimeout(timeoutId);
 
-                console.log(`Successful connection to: ${urlToUse}`);
+                DEBUG_CONFIG.log(`Successful connection to: ${urlToUse}`);
                 this.lastSuccessfulRpcUrl = urlToUse;
+                this.connectionAttempts = 0; // Reset counter on success
 
                 // Si tenemos una wallet, también inicializar el signing client
                 if (this.wallet) {
@@ -92,7 +96,7 @@ export class WalletManager {
 
                 return; // Si se conectó con éxito, terminar
             } catch (error) {
-                console.error(`Error connecting to ${rpcUrl}:`, error);
+                DEBUG_CONFIG.error(`Error connecting to ${rpcUrl}:`, error);
                 lastError = error;
                 // Continuar con el siguiente endpoint
             }
@@ -128,7 +132,7 @@ export class WalletManager {
             this.networkType = networkType;
             this.networkMode = 'MAINNET'; // FORZAR MAINNET para Morse
             this.isForcedOffline = false; // Morse está "conectado" via API
-            console.log(`🟡 MORSE network configured for MAINNET mode`);
+            DEBUG_CONFIG.log(`🟡 MORSE network configured for MAINNET mode`);
             return; // No intentar conexión RPC para Morse
         }
 
@@ -141,7 +145,7 @@ export class WalletManager {
         // Reinicializar ShannonWallet con la nueva configuración
         if (networkType === 'shannon') {
             this.shannonWallet = new ShannonWallet(this.networkMode);
-            console.log(`🔧 ShannonWallet reinitializado para ${this.networkMode}`);
+            DEBUG_CONFIG.log(`🔧 ShannonWallet reinitializado para ${this.networkMode}`);
         }
 
         try {
@@ -163,7 +167,7 @@ export class WalletManager {
      */
     setOfflineMode(offline: boolean = true): void {
         this.isForcedOffline = offline;
-        console.log(`Offline mode ${offline ? 'enabled' : 'disabled'}`);
+        DEBUG_CONFIG.log(`Offline mode ${offline ? 'enabled' : 'disabled'}`);
     }
 
     /**
@@ -228,7 +232,7 @@ export class WalletManager {
         try {
             // Si es Shannon, usar la función directa de ShannonWallet (sin hooks)
             if (this.networkType === 'shannon') {
-                console.log("🔵 Usando ShannonWallet.createWalletDirect para crear wallet");
+                DEBUG_CONFIG.log("🔵 Usando ShannonWallet.createWalletDirect para crear wallet");
 
                 // Llamar a la función directa que no usa hooks
                 const result = await createWalletDirect(
@@ -236,11 +240,11 @@ export class WalletManager {
                     this.networkMode === 'MAINNET'
                 );
 
-                console.log("✅ Wallet creada exitosamente con ShannonWallet:", result.address);
+                DEBUG_CONFIG.log("✅ Wallet creada exitosamente con ShannonWallet:", result.address);
 
                 // Desencriptar para obtener el mnemónico
                 const walletInfo = await decryptWallet(result.serialized, password);
-                console.log("✅ Wallet desencriptada exitosamente");
+                DEBUG_CONFIG.log("✅ Wallet desencriptada exitosamente");
 
                 // Asignar la wallet al WalletManager para mantener compatibilidad
                 this.wallet = await DirectSecp256k1HdWallet.fromMnemonic(walletInfo.mnemonic, {
@@ -288,7 +292,7 @@ export class WalletManager {
                     privateKey = Array.from(randomBytes)
                         .map(b => b.toString(16).padStart(2, '0'))
                         .join('');
-                    console.log('⚠️ Generada clave privada aleatoria como fallback');
+                    DEBUG_CONFIG.log('⚠️ Generada clave privada aleatoria como fallback');
                 }
             } catch (error) {
                 console.warn('⚠️ No se pudo extraer la clave privada:', error);
@@ -298,7 +302,7 @@ export class WalletManager {
                 privateKey = Array.from(randomBytes)
                     .map(b => b.toString(16).padStart(2, '0'))
                     .join('');
-                console.log('⚠️ Generada clave privada aleatoria como fallback');
+                DEBUG_CONFIG.log('⚠️ Generada clave privada aleatoria como fallback');
             }
 
             // Re-inicializar cliente con signing client
@@ -334,7 +338,7 @@ export class WalletManager {
     async importWallet(serialization: string, password: string): Promise<string> {
         try {
             // FORZAR PREFIJO MAINNET
-            console.log('🔵 WalletManager.importWallet - FORZANDO prefijo MAINNET "pokt"');
+            DEBUG_CONFIG.log('🔵 WalletManager.importWallet - FORZANDO prefijo MAINNET "pokt"');
 
             // Intentar conectar primero
             if (!this.isOfflineMode()) {
@@ -360,7 +364,7 @@ export class WalletManager {
             // Verificar si el prefijo es correcto (debe ser pokt para mainnet)
             const [firstAccount] = await this.wallet.getAccounts();
             if (!firstAccount.address.startsWith('pokt')) {
-                console.log(`⚠️ Wallet importada con prefijo incorrecto: ${firstAccount.address.substring(0, 7)}... - DEBERÍA ser 'pokt'`);
+                DEBUG_CONFIG.log(`⚠️ Wallet importada con prefijo incorrecto: ${firstAccount.address.substring(0, 7)}... - DEBERÍA ser 'pokt'`);
                 // No se puede cambiar el prefijo de una wallet ya deserializada, 
                 // tendríamos que recrearla con el prefijo correcto
             }
@@ -387,9 +391,9 @@ export class WalletManager {
             // Si estamos en Shannon, intentar usar directamente el cliente RPC
             if (this.networkType === 'shannon' && this.shannonWallet) {
                 try {
-                    console.log(`🔍 Fetching Shannon balance using ShannonWallet for ${address}`);
+                    DEBUG_CONFIG.log(`🔍 Fetching Shannon balance using ShannonWallet for ${address}`);
                     const balance = await this.shannonWallet.getBalance(address);
-                    console.log(`✅ Shannon balance: ${balance}`);
+                    DEBUG_CONFIG.log(`✅ Shannon balance: ${balance}`);
                     return balance;
                 } catch (error) {
                     console.error('Error getting balance from Shannon RPC:', error);
@@ -399,7 +403,7 @@ export class WalletManager {
 
             // Consultar directamente a la API de PokTradar como respaldo
             const url = `https://poktradar.io/api/address/balance?address=${address}`;
-            console.log(`🔍 Fetching balance from PokTradar API: ${url}`);
+            DEBUG_CONFIG.log(`🔍 Fetching balance from PokTradar API: ${url}`);
 
             // API permite cualquier origen
             const response = await fetch(url);
@@ -411,7 +415,7 @@ export class WalletManager {
             const data = await response.json();
             // El API de PokTradar devuelve el balance en el campo balance
             const balance = data.balance || "0";
-            console.log(`✅ Balance from PokTradar: ${balance}`);
+            DEBUG_CONFIG.log(`✅ Balance from PokTradar: ${balance}`);
             return balance;
         } catch (error) {
             console.error('Error getting balance:', error);
@@ -433,7 +437,7 @@ export class WalletManager {
 
             // Consultar directamente a la API de PokTradar
             const url = `https://poktradar.io/api/address/transactions?address=${address}&limit=20`;
-            console.log(`🔍 Fetching transactions from PokTradar API: ${url}`);
+            DEBUG_CONFIG.log(`🔍 Fetching transactions from PokTradar API: ${url}`);
 
             // API permite cualquier origen
             const response = await fetch(url);
@@ -443,7 +447,7 @@ export class WalletManager {
             }
 
             const data = await response.json();
-            console.log(`✅ Transactions found: ${data.transactions?.length || 0}`);
+            DEBUG_CONFIG.log(`✅ Transactions found: ${data.transactions?.length || 0}`);
 
             // Formatear las transacciones según la estructura correcta
             return this.formatTransactions(data.transactions || [], address);

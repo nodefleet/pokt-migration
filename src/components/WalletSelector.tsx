@@ -4,6 +4,7 @@ import { storageService } from '../controller/storage.service';
 import { StoredWallet } from '../types';
 import { NetworkType } from '../controller/WalletManager';
 import { walletService } from '../controller/WalletService';
+import { DEBUG_CONFIG } from '../controller/config';
 
 interface WalletSelectorProps {
     currentAddress: string | null;
@@ -46,7 +47,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
 
         // Listener para actualizaciones de storage (solo wallets, no isMainnet)
         const handleStorageUpdate = () => {
-            console.log('WalletSelector: Storage actualizado, recargando wallets');
+            DEBUG_CONFIG.log('WalletSelector: Storage actualizado, recargando wallets');
             loadAvailableWallets();
         };
 
@@ -124,7 +125,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
     const handleWalletSelect = (wallet: StoredWallet) => {
         const addr = getWalletAddress(wallet);
         if (addr) {
-            console.log(`🎯 Wallet selected: ${addr} - Network: ${wallet.network} - Mainnet: ${selectedMainnet === true ? 'mainnet' : 'testnet'}`);
+            DEBUG_CONFIG.log(`🎯 Wallet selected: ${addr} - Network: ${wallet.network} - Mainnet: ${selectedMainnet === true ? 'mainnet' : 'testnet'}`);
 
             // Pass both the address and the selected network/mainnet flag
             onWalletChange(addr, (wallet.network || currentNetwork) as NetworkType, selectedMainnet);
@@ -148,11 +149,11 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
             if (network === 'morse') {
                 // Obtener clave privada de Morse
                 privateKey = await walletService.getMorsePrivateKey();
-                console.log('🔑 Obtenida clave privada de Morse');
+                DEBUG_CONFIG.log('🔑 Obtenida clave privada de Morse');
             } else {
                 // Obtener clave privada de Shannon
                 privateKey = await walletService.getShannonPrivateKey();
-                console.log('🔑 Obtenida clave privada de Shannon');
+                DEBUG_CONFIG.log('🔑 Obtenida clave privada de Shannon');
             }
 
             if (privateKey) {
@@ -361,7 +362,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                                             className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
                                                             title="View private key"
                                                         >
-                                                            <i className="fas fa-key mr-1"></i> View Private Key
+                                                            <i className="fas fa-key mr-1"></i> View Secret Phrase
                                                         </button>
                                                     </div>
                                                 )}
@@ -465,11 +466,11 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                         <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 mb-4">
                             <p className="text-red-300 text-sm mb-2 font-semibold">
                                 <i className="fas fa-shield-alt mr-2"></i>
-                                EXTREME CAUTION! This is your private key.
+                                EXTREME CAUTION! This is your secret phrase.
                             </p>
                             <ul className="text-red-200 text-xs space-y-1 list-disc pl-5">
-                                <li>Never share your private key with anyone</li>
-                                <li>Anyone with this key can steal your funds</li>
+                                <li>Never share your secret phrase with anyone</li>
+                                <li>Anyone with this phrase can steal your funds</li>
                                 <li>Store it securely offline if needed</li>
                                 <li>Take a screenshot only if absolutely necessary</li>
                             </ul>

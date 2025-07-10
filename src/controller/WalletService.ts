@@ -1,5 +1,5 @@
 import { WalletManager, Transaction, NetworkType } from './WalletManager';
-import { NETWORKS, STORAGE_KEYS } from './config';
+import { STORAGE_KEYS, ERROR_MESSAGES, DEBUG_CONFIG } from './config';
 import { morseWalletService } from './MorseWallet';
 import { storageService } from './storage.service';
 import { useImportMnemonic, useImportWallet } from './ShannonWallet';
@@ -21,20 +21,19 @@ export class WalletService {
 
     constructor() {
         // Verificar configuración guardada antes de inicializar WalletManager
-        const savedIsMainnet = storageService.getSync<boolean>('isMainnet') as boolean;
-        const savedNetworkType = storageService.getSync<NetworkType>(STORAGE_KEYS.NETWORK_TYPE) || 'shannon';
+        const savedIsMainnet = storageService.getSync<boolean>('isMainnet');
+        DEBUG_CONFIG.log('🔍 WalletService: savedNetworkType:', savedIsMainnet);
 
         // Configurar los valores internos basados en lo guardado
-        this.networkType = savedNetworkType;
-        console.log('🔍 WalletService: savedNetworkType:', savedIsMainnet);
-        this.isMainnet = savedIsMainnet !== null ? savedIsMainnet : false;
+        this.networkType = storageService.getSync<NetworkType>(STORAGE_KEYS.NETWORK_TYPE) || 'shannon';
+        this.isMainnet = savedIsMainnet !== null && savedIsMainnet !== undefined ? savedIsMainnet : true;
 
-        console.log(`🚀 WalletService initialized with: Network=${this.networkType}, IsMainnet=${this.isMainnet}`);
+        DEBUG_CONFIG.log(`🚀 WalletService initialized with: Network=${this.networkType}, IsMainnet=${this.isMainnet}`);
 
         // Inicializar WalletManager con la configuración correcta
         // isTestnet = !isMainnet (Si isMainnet es false, entonces isTestnet es true)
         const isTestnet = !this.isMainnet;
-        console.log(`🔍 WalletService constructor: isMainnet=${this.isMainnet}, isTestnet=${isTestnet}`);
+        DEBUG_CONFIG.log(`🔍 WalletService constructor: isMainnet=${this.isMainnet}, isTestnet=${isTestnet}`);
         this.walletManager = new WalletManager(this.networkType, isTestnet);
     }
 
@@ -42,7 +41,7 @@ export class WalletService {
         if (!this.walletManager) {
             // Si por alguna razón no existe, recrear con configuración actual
             const isTestnet = this.isMainnet !== true;
-            console.log(`🔍 WalletService init: isMainnet=${this.isMainnet}, isTestnet=${isTestnet}`);
+            DEBUG_CONFIG.log(`🔍 WalletService init: isMainnet=${this.isMainnet}, isTestnet=${isTestnet}`);
             this.walletManager = new WalletManager(this.networkType, isTestnet);
         }
 
@@ -80,8 +79,8 @@ export class WalletService {
         const cleanHex = trimmed.startsWith('0x') ? trimmed.substring(2) : trimmed;
 
         // Las claves privadas de Shannon son de 64 caracteres (32 bytes)
-        const isShannonHex = /^[0-9a-fA-F]{64}$/.test(cleanHex);
-        console.log('🔍 Checking if Shannon 64-char key:', isShannonHex, 'Length:', cleanHex.length);
+        const isShannonHex = cleanHex.length === 64 && /^[0-9a-fA-F]+$/.test(cleanHex);
+        DEBUG_CONFIG.log('🔍 Checking if Shannon 64-char key:', isShannonHex, 'Length:', cleanHex.length);
 
         return isShannonHex;
     }
@@ -103,27 +102,24 @@ export class WalletService {
             // storageService.set(STORAGE_KEYS.NETWORK, isMainnet === true ? 'mainnet' : 'testnet');
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
-            const isTestnet = isMainnet === false; // Si es false (testnet), entonces isTestnet = true
-            console.log(`🔍 DEBUG createWallet: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
+            const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
+            DEBUG_CONFIG.log(`🔍 DEBUG createWallet: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
-            // Cambiar a la red adecuada
-            await this.walletManager.switchNetwork(network, isTestnet);
-
-            // Crear la wallet
-            const { address, serializedWallet, privateKey } = await this.walletManager.createWallet(password);
+            // Crear wallet usando el WalletManager
+            const walletInfo = await this.walletManager.createWallet(password);
 
             // Verificar que la dirección coincida con la configuración de red
-            const detectedConfig = this.detectNetworkFromAddress(address);
+            const detectedConfig = this.detectNetworkFromAddress(walletInfo.address);
             if (detectedConfig.network !== network || detectedConfig.isMainnet !== isMainnet) {
                 console.warn(`Address prefix mismatch. Expected ${network} ${isMainnet === true ? 'mainnet' : 'testnet'}, got address with prefix for ${detectedConfig.network} ${detectedConfig.isMainnet === true ? 'mainnet' : 'testnet'}`);
             }
 
             // Guardar la dirección y la wallet serializada
-            this.currentWalletAddress = address;
-            this.serializedWallet = serializedWallet;
+            this.currentWalletAddress = walletInfo.address;
+            this.serializedWallet = walletInfo.serializedWallet;
 
             // Guardar en localStorage con la clave privada
-            await storageService.set(STORAGE_KEYS.WALLET_ADDRESS, address);
+            await storageService.set(STORAGE_KEYS.WALLET_ADDRESS, walletInfo.address);
 
             // Guardar wallet completa con clave privada
             // if (network === 'shannon') {
@@ -153,10 +149,10 @@ export class WalletService {
             // }
 
             // Obtener balance
-            const balance = await this.getBalance(address);
+            const balance = await this.getBalance(walletInfo.address);
 
             return {
-                address,
+                address: walletInfo.address,
                 balance,
                 network,
                 isMainnet
@@ -217,7 +213,7 @@ export class WalletService {
 
                 // Verificar si la dirección es compatible con la red configurada
                 if (!this.isAddressCompatible(storedAddress, storedNetworkType, isMainnet)) {
-                    console.log('Incompatible wallet detected. Auto-configuring network based on address prefix...');
+                    DEBUG_CONFIG.log('Incompatible wallet detected. Auto-configuring network based on address prefix...');
 
                     // Detectar la configuración correcta basándose en la dirección
                     const correctConfig = this.detectNetworkFromAddress(storedAddress);
@@ -232,27 +228,27 @@ export class WalletService {
                     if (currentIsMainnet !== null && currentIsMainnet !== undefined) {
                         finalIsMainnet = Boolean(currentIsMainnet === true); // FORZAR booleano válido
                         this.isMainnet = finalIsMainnet;
-                        console.log(`🎯 validateAndCleanWallets: RESPECTING existing configuration: ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
+                        DEBUG_CONFIG.log(`🎯 validateAndCleanWallets: RESPECTING existing configuration: ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
                     } else {
                         // Solo si NO hay configuración existente, usar detección
                         finalIsMainnet = Boolean(correctConfig.isMainnet === true); // FORZAR booleano válido
                         this.isMainnet = finalIsMainnet;
-                        console.log(`🔧 validateAndCleanWallets: NO existing config - setting from detection: ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
+                        DEBUG_CONFIG.log(`🔧 validateAndCleanWallets: NO existing config - setting from detection: ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
                     }
 
                     // Actualizar localStorage
                     storageService.set(STORAGE_KEYS.NETWORK_TYPE, correctConfig.network);
 
-                    console.log(`🔧 Network validated: ${correctConfig.network} ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
+                    DEBUG_CONFIG.log(`🔧 Network validated: ${correctConfig.network} ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
 
                     // CORREGIR: El WalletManager espera isTestnet, no isMainnet
                     const isTestnet = !finalIsMainnet; // Negar directamente - más simple y confiable
-                    console.log(`🔍 DEBUG validateAndCleanWallets: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet} (types: ${typeof finalIsMainnet}, ${typeof isTestnet}) - EXPECTED: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
+                    DEBUG_CONFIG.log(`🔍 DEBUG validateAndCleanWallets: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet} (types: ${typeof finalIsMainnet}, ${typeof isTestnet}) - EXPECTED: ${isTestnet ? 'TESTNET' : 'MAINNET'}`);
 
                     // Cambiar a la red usando la configuración FINAL
                     await this.walletManager.switchNetwork(correctConfig.network, isTestnet);
                 } else {
-                    console.log('🎯 validateAndCleanWallets: Wallet configuration is already compatible - no changes needed');
+                    DEBUG_CONFIG.log('🎯 validateAndCleanWallets: Wallet configuration is already compatible - no changes needed');
                 }
             }
         } catch (error) {
@@ -284,15 +280,15 @@ export class WalletService {
             }
             else if (network === 'shannon') {
                 if (this.isShannonPrivateKey(code)) {
-                    console.log('🔑 Detected Shannon 64-char private key format');
+                    DEBUG_CONFIG.log('🔑 Detected Shannon 64-char private key format');
                     return await this.importShannonPrivateKey(code, password, network, isMainnet);
                 } else {
-                    console.log('📄 Using standard Shannon import for mnemonic/JSON');
+                    DEBUG_CONFIG.log('📄 Using standard Shannon import for mnemonic/JSON');
                     return await this.importShannonWallet(code, password, network, isMainnet);
                 }
             }
             else {
-                console.log('⚠️ No network specified, defaulting to Shannon');
+                DEBUG_CONFIG.log('⚠️ No network specified, defaulting to Shannon');
                 // Default a Shannon si no se especifica la red
                 return await this.importShannonWallet(code, password, 'shannon', isMainnet);
             }
@@ -315,7 +311,7 @@ export class WalletService {
             const prefix = "pokt"; // El prefijo es el mismo para mainnet y testnet
             const networkLabel = useMainnet ? "mainnet" : "testnet";
 
-            console.log(`🔵 Importing Shannon private key directly as ${networkLabel} (prefix: ${prefix})`);
+            DEBUG_CONFIG.log(`🔵 Importing Shannon private key directly as ${networkLabel} (prefix: ${prefix})`);
 
             // Limpiar la clave privada (remover 0x si está presente)
             let cleanPrivateKey = code.trim().startsWith('0x')
@@ -329,7 +325,7 @@ export class WalletService {
                     network: 'shannon',
                     isMainnet: useMainnet
                 };
-                console.log(`✅ Shannon ${networkLabel} import success:`, address);
+                DEBUG_CONFIG.log(`✅ Shannon ${networkLabel} import success:`, address);
 
                 // IMPORTANTE: Guardar la clave privada en el objeto wallet
                 await storageService.set('shannon_wallet', {
@@ -339,7 +335,7 @@ export class WalletService {
                     timestamp: Date.now(),
                     parsed: { address }
                 });
-                console.log('✅ Private key saved in shannon_wallet object');
+                DEBUG_CONFIG.log('✅ Private key saved in shannon_wallet object');
 
                 // También guardar en el array de wallets si existe
                 const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
@@ -365,7 +361,7 @@ export class WalletService {
                     }
 
                     await storageService.set('shannon_wallets', shannonWallets);
-                    console.log('✅ Private key saved in shannon_wallets array');
+                    DEBUG_CONFIG.log('✅ Private key saved in shannon_wallets array');
                 }
             } catch (error) {
                 console.error(`❌ Failed to import Shannon ${networkLabel}:`, error);
@@ -382,7 +378,7 @@ export class WalletService {
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !finalIsMainnet;
-            console.log(`🔍 DEBUG importShannonPrivateKey: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet}`);
+            DEBUG_CONFIG.log(`🔍 DEBUG importShannonPrivateKey: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet}`);
 
             await this.walletManager.switchNetwork(finalNetwork, isTestnet);
 
@@ -396,7 +392,7 @@ export class WalletService {
                 console.warn('Could not get balance:', balanceError);
             }
 
-            console.log(`🎯 Shannon wallet configured: ${finalNetwork} ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
+            DEBUG_CONFIG.log(`🎯 Shannon wallet configured: ${finalNetwork} ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
 
             return {
                 address,
@@ -467,23 +463,23 @@ export class WalletService {
      */
     private async importShannonWallet(code: string, password: string, network?: NetworkType, isMainnet?: boolean): Promise<WalletInfo> {
         try {
-            console.log('🚀 Importing Shannon wallet...');
+            DEBUG_CONFIG.log('🚀 Importing Shannon wallet...');
 
             let address: string;
             // Usar la configuración proporcionada o default a false (testnet)
             const useMainnet = isMainnet === true;
             const networkLabel = useMainnet ? "mainnet" : "testnet";
 
-            console.log(`🎯 Usando Shannon ${networkLabel}`);
+            DEBUG_CONFIG.log(`🎯 Usando Shannon ${networkLabel}`);
 
             const prefix = "pokt"; // El prefijo es el mismo para mainnet y testnet
-            console.log(`🔧 Using prefix: ${prefix}`);
+            DEBUG_CONFIG.log(`🔧 Using prefix: ${prefix}`);
 
             // Detectar si es wallet serializada o mnemónico
             const isSerializedWallet = code.trim().startsWith('{') || code.includes('"type"');
 
             if (isSerializedWallet) {
-                console.log(`📦 Detected serialized wallet - using deserialization (${networkLabel})`);
+                DEBUG_CONFIG.log(`📦 Detected serialized wallet - using deserialization (${networkLabel})`);
                 const { DirectSecp256k1HdWallet } = await import('@cosmjs/proto-signing');
 
                 try {
@@ -492,7 +488,7 @@ export class WalletService {
 
                     if (account) {
                         address = account.address;
-                        console.log(`✅ Serialized wallet imported with ${networkLabel}:`, address);
+                        DEBUG_CONFIG.log(`✅ Serialized wallet imported with ${networkLabel}:`, address);
                     } else {
                         throw new Error('Could not get account from serialized wallet');
                     }
@@ -501,7 +497,7 @@ export class WalletService {
                     throw new Error('Could not deserialize Shannon wallet');
                 }
             } else {
-                console.log(`🎯 Detected mnemonic - using mnemonic import (${networkLabel})`);
+                DEBUG_CONFIG.log(`🎯 Detected mnemonic - using mnemonic import (${networkLabel})`);
                 const { DirectSecp256k1HdWallet } = await import('@cosmjs/proto-signing');
                 const trimmedMnemonic = code.trim();
                 const words = trimmedMnemonic.split(/\s+/);
@@ -518,7 +514,7 @@ export class WalletService {
 
                     if (account) {
                         address = account.address;
-                        console.log(`✅ Mnemonic wallet created with ${networkLabel}:`, address);
+                        DEBUG_CONFIG.log(`✅ Mnemonic wallet created with ${networkLabel}:`, address);
                     } else {
                         throw new Error('Could not get account from mnemonic');
                     }
@@ -532,7 +528,7 @@ export class WalletService {
             const finalNetwork = network || 'shannon';
             const finalIsMainnet = useMainnet;
 
-            console.log(`🎯 Using final config: ${finalNetwork} ${networkLabel}`);
+            DEBUG_CONFIG.log(`🎯 Using final config: ${finalNetwork} ${networkLabel}`);
 
             // Configurar red Shannon
             this.networkType = finalNetwork;
@@ -541,7 +537,7 @@ export class WalletService {
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !finalIsMainnet;
-            console.log(`🔍 DEBUG importShannonWallet: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet}`);
+            DEBUG_CONFIG.log(`🔍 DEBUG importShannonWallet: finalIsMainnet=${finalIsMainnet}, isTestnet=${isTestnet}`);
 
             await this.walletManager.switchNetwork(finalNetwork, isTestnet);
 
@@ -575,7 +571,7 @@ export class WalletService {
      */
     async migrateFromMorseToShannon(morseAddress: string, shannonAddress: string): Promise<boolean> {
         try {
-            console.log(`Migrando wallet desde Morse (${morseAddress}) a Shannon (${shannonAddress})`);
+            DEBUG_CONFIG.log(`Migrando wallet desde Morse (${morseAddress}) a Shannon (${shannonAddress})`);
 
             // Obtener los datos del wallet Morse
             const morseWalletData = await storageService.get<any>('morse_wallet');
@@ -591,7 +587,7 @@ export class WalletService {
                 // Intentar parsear como JSON primero
                 morseWalletJson = JSON.parse(morseWalletData.serialized);
                 if (morseWalletJson && morseWalletJson.priv) {
-                    console.log('📋 Detectado wallet Morse en formato JSON');
+                    DEBUG_CONFIG.log('📋 Detectado wallet Morse en formato JSON');
                     // Extraer clave privada para uso alternativo
                     morsePrivateKey = morseWalletJson.priv;
                 } else {
@@ -599,7 +595,7 @@ export class WalletService {
                 }
             } catch (e) {
                 // Si no es JSON, usar directamente como clave privada
-                console.log('📋 Usando wallet Morse como clave privada directa');
+                DEBUG_CONFIG.log('📋 Usando wallet Morse como clave privada directa');
                 morsePrivateKey = morseWalletData.serialized;
                 morseWalletJson = null;
             }
@@ -609,7 +605,7 @@ export class WalletService {
                 ? morsePrivateKey.substring(2)
                 : morsePrivateKey;
 
-            console.log('Clave privada Morse obtenida, enviando al servicio de migración...');
+            DEBUG_CONFIG.log('Clave privada Morse obtenida, enviando al servicio de migración...');
 
             // Verificar si tenemos acceso al servicio de migración backend
             const backendUrl = 'http://localhost:3001'; // URL del backend de migración
@@ -668,7 +664,7 @@ export class WalletService {
                     throw new Error(`Migration CLI tool is not available: ${healthData.pocketd.error || 'Unknown error'}`);
                 }
 
-                console.log('✅ Migration backend service is ready');
+                DEBUG_CONFIG.log('✅ Migration backend service is ready');
             } catch (healthError: any) {
                 console.error('❌ Migration backend health check failed:', healthError);
                 throw new Error(`Migration service is not available: ${healthError.message}`);
@@ -707,7 +703,7 @@ export class WalletService {
 
             // Procesar respuesta exitosa
             const result = await response.json();
-            console.log('Resultado de la migración:', result);
+            DEBUG_CONFIG.log('Resultado de la migración:', result);
 
             // Verificar tanto el éxito de la comunicación como el resultado real de la migración
             const migrationSuccess = result.success && result.data?.result?.success !== false;
@@ -722,7 +718,7 @@ export class WalletService {
                 throw new Error(`Migration failed: ${errorMessage}`);
             }
 
-            console.log('✅ Migración completada con éxito');
+            DEBUG_CONFIG.log('✅ Migración completada con éxito');
             return true;
 
         } catch (error) {
@@ -738,7 +734,7 @@ export class WalletService {
      */
     async getBalance(address: string): Promise<string> {
         try {
-            console.log(`🔍 WalletService.getBalance: Fetching balance for ${address}`);
+            DEBUG_CONFIG.log(`🔍 WalletService.getBalance: Fetching balance for ${address}`);
 
             if (!this.walletManager) {
                 console.warn('⚠️ WalletManager no inicializado en getBalance');
@@ -750,7 +746,7 @@ export class WalletService {
 
             // Obtener balance directamente
             const balance = await this.walletManager.getBalance(address);
-            console.log(`💰 WalletService.getBalance: Balance for ${address}: ${balance}`);
+            DEBUG_CONFIG.log(`💰 WalletService.getBalance: Balance for ${address}: ${balance}`);
 
             return balance;
         } catch (error) {
@@ -819,8 +815,8 @@ export class WalletService {
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !isMainnetBool; // Negar directamente - más simple y confiable
-            console.log(`🔍 DEBUG switchNetwork: isMainnet=${isMainnetBool}, isTestnet=${isTestnet} (types: ${typeof isMainnetBool}, ${typeof isTestnet})`);
-            console.log(`🔍 DEBUG switchNetwork: About to call walletManager.switchNetwork(${network}, ${isTestnet})`);
+            DEBUG_CONFIG.log(`🔍 DEBUG switchNetwork: isMainnet=${isMainnetBool}, isTestnet=${isTestnet} (types: ${typeof isMainnetBool}, ${typeof isTestnet})`);
+            DEBUG_CONFIG.log(`🔍 DEBUG switchNetwork: About to call walletManager.switchNetwork(${network}, ${isTestnet})`);
 
             // Permitir que todas las redes (incluido Morse) usen sus funciones específicas
             await this.walletManager.switchNetwork(network, isTestnet);
@@ -844,7 +840,7 @@ export class WalletService {
      */
     logout(): void {
         try {
-            console.log('🔄 Starting WalletService logout...');
+            DEBUG_CONFIG.log('🔄 Starting WalletService logout...');
 
             // Limpiar propiedades internas
             this.currentWalletAddress = null;
@@ -857,7 +853,7 @@ export class WalletService {
             storageService.remove(STORAGE_KEYS.NETWORK_TYPE);
             storageService.remove(STORAGE_KEYS.NETWORK);
 
-            console.log('✅ WalletService logout completed');
+            DEBUG_CONFIG.log('✅ WalletService logout completed');
         } catch (error) {
             console.error('❌ Error during WalletService logout:', error);
         }
@@ -899,7 +895,7 @@ export class WalletService {
         // Primero verificar si es una wallet de Morse guardada
         const morseWallet = await storageService.get<any>('morse_wallet');
         if (morseWallet && morseWallet.parsed?.address === address) {
-            console.log('🟡 Address detected as MORSE wallet from storage');
+            DEBUG_CONFIG.log('🟡 Address detected as MORSE wallet from storage');
             return { network: 'morse', isMainnet: false };
         }
 
@@ -930,13 +926,13 @@ export class WalletService {
 
             // Verificar si hay una clave privada directa en el objeto
             if (shannonWallet.privateKey) {
-                console.log('✅ Encontrada clave privada Shannon en el objeto wallet');
+                DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en el objeto wallet');
                 return shannonWallet.privateKey;
             }
 
             // Verificar si está en el campo serialized como clave privada directa (64 caracteres hex)
             if (shannonWallet.serialized && this.isShannonPrivateKey(shannonWallet.serialized)) {
-                console.log('✅ Encontrada clave privada Shannon en formato hex');
+                DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en formato hex');
                 return shannonWallet.serialized;
             }
 
@@ -946,12 +942,12 @@ export class WalletService {
                 // Buscar en cada wallet si tiene privateKey
                 for (const wallet of shannonWallets) {
                     if (wallet.privateKey && this.isShannonPrivateKey(wallet.privateKey)) {
-                        console.log('✅ Encontrada clave privada Shannon en shannon_wallets');
+                        DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en shannon_wallets');
                         return wallet.privateKey;
                     }
 
                     if (wallet.serialized && this.isShannonPrivateKey(wallet.serialized)) {
-                        console.log('✅ Encontrada clave privada Shannon en formato hex en shannon_wallets');
+                        DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en formato hex en shannon_wallets');
                         return wallet.serialized;
                     }
                 }

@@ -1,3 +1,30 @@
+// Debug Configuration
+export const DEBUG_CONFIG = {
+    // Set to true to enable all console.log statements
+    ENABLED: import.meta.env.VITE_DEBUG === 'true' || import.meta.env.DEBUG === 'true' || false,
+    
+    // Helper function to conditionally log
+    log: (...args: any[]) => {
+        if (DEBUG_CONFIG.ENABLED) {
+            console.log(...args);
+        }
+    },
+    
+    // Helper function to conditionally log errors
+    error: (...args: any[]) => {
+        if (DEBUG_CONFIG.ENABLED) {
+            console.error(...args);
+        }
+    },
+    
+    // Helper function to conditionally log warnings
+    warn: (...args: any[]) => {
+        if (DEBUG_CONFIG.ENABLED) {
+            console.warn(...args);
+        }
+    }
+};
+
 export const NETWORKS = {
     SHANNON: {
         MAINNET: {
