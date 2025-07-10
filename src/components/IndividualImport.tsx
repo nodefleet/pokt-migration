@@ -281,6 +281,9 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 // Para otros formatos, mantener el comportamiento original
                 let parsed: any = null;
                 try { parsed = JSON.parse(inputText); } catch { }
+                if (!parsed || !parsed.address) {
+                    parsed = { address: importResult?.address || '' };
+                }
 
                 walletObj = {
                     id: `shannon_${timestamp}`,
