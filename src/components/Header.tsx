@@ -26,6 +26,7 @@ const Header: React.FC<ExtendedHeaderProps> = ({
 }) => {
     const navigate = useNavigate();
     const [showNetworkBadge, setShowNetworkBadge] = useState(true);
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
     const handleWalletChange = (address: string, network: NetworkType, isMainnet?: boolean) => {
         if (onWalletChange) {
@@ -47,6 +48,19 @@ const Header: React.FC<ExtendedHeaderProps> = ({
 
     const handleImportNew = () => {
         navigate('/import/individual');
+    };
+
+    const handleLogoutClick = () => {
+        setShowLogoutConfirm(true);
+    };
+
+    const handleLogoutConfirm = () => {
+        setShowLogoutConfirm(false);
+        if (onLogout) onLogout(currentNetwork);
+    };
+
+    const handleLogoutCancel = () => {
+        setShowLogoutConfirm(false);
     };
 
     return (
@@ -114,7 +128,7 @@ const Header: React.FC<ExtendedHeaderProps> = ({
 
                                 {onLogout && (
                                     <motion.button
-                                        onClick={onLogout}
+                                        onClick={handleLogoutClick}
                                         className="relative overflow-hidden bg-gradient-to-r from-red-600/40 to-red-700/40 hover:from-red-600/60 hover:to-red-700/60 px-5 py-2 rounded-xl text-white border border-red-500/30 transition-all duration-300 group"
                                         whileHover={{ scale: 1.05 }}
                                         whileTap={{ scale: 0.95 }}
@@ -131,6 +145,43 @@ const Header: React.FC<ExtendedHeaderProps> = ({
                     </div>
                 </div>
             </motion.header>
+            {/* Logout Confirmation Modal */}
+            <AnimatePresence>
+                {showLogoutConfirm && (
+                    <motion.div
+                        className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    >
+                        <motion.div
+                            className="bg-gray-900 rounded-xl p-8 border-2 border-gray-700 shadow-xl max-w-sm w-full text-center"
+                            initial={{ scale: 0.95, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.95, y: 20 }}
+                        >
+                            <h2 className="text-xl font-bold mb-4">Confirm Logout</h2>
+                            <p className="mb-6 text-gray-300">
+                                Are you sure you want to logout from your {currentNetwork.charAt(0).toUpperCase() + currentNetwork.slice(1)} wallet?
+                            </p>
+                            <div className="flex justify-center gap-4">
+                                <button
+                                    className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold"
+                                    onClick={handleLogoutConfirm}
+                                >
+                                    Yes, Logout
+                                </button>
+                                <button
+                                    className="px-6 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold"
+                                    onClick={handleLogoutCancel}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 };

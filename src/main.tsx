@@ -356,43 +356,72 @@ const App: React.FC = () => {
         }
     };
 
-    const handleLogout = async () => {
+    const handleLogout = async (network?: NetworkType) => {
         try {
-            DEBUG_CONFIG.log('🚪 Starting complete logout...');
+            DEBUG_CONFIG.log(`🚪 Starting ${network || 'complete'} logout...`);
 
-            // 1. Limpiar el servicio de wallets
-            walletService.logout();
-
-            // 2. Limpiar estados locales
-            setState({ walletAddress: null, showTransactions: false });
-            setBalance('0');
-            setTransactions([]);
-            setNetworkType('shannon');
-            setIsMainnet(false);
-            setNetworkError(null);
-
-            // 3. LIMPIAR COMPLETAMENTE TODO EL STORAGE relacionado con wallets
-            await storageService.remove('isMainnet');
-            await storageService.remove('shannon_wallet');
-            await storageService.remove('morse_wallet');
-            await storageService.remove('walletAddress');
-            await storageService.remove('walletData');
-            await storageService.remove('pokt_network_type');
-            await storageService.remove('pokt_network');
-
-            // 4. Limpiar cualquier otro dato residual
-            const keys = await storageService.keys();
-            for (const key of keys) {
-                if (key.includes('wallet') || key.includes('address') || key.includes('network')) {
-                    await storageService.remove(key);
-                    DEBUG_CONFIG.log(`🧹 Removed storage key: ${key}`);
+            if (network) {
+                // Network-specific logout
+                if (network === 'morse') {
+                    // Clear only Morse wallet data
+                    await storageService.remove('morse_wallet');
+                    await storageService.remove('morse_wallets');
+                    DEBUG_CONFIG.log('✅ Morse wallet logout completed');
+                } else if (network === 'shannon') {
+                    // Clear only Shannon wallet data
+                    await storageService.remove('shannon_wallet');
+                    await storageService.remove('shannon_wallets');
+                    DEBUG_CONFIG.log('✅ Shannon wallet logout completed');
                 }
+
+                // If we're currently on the logged out network, clear current state
+                if (networkType === network) {
+                    setState({ walletAddress: null, showTransactions: false });
+                    setBalance('0');
+                    setTransactions([]);
+                    setNetworkError(null);
+                    
+                    // Navigate to home page
+                    navigate('/');
+                }
+            } else {
+                // Complete logout (fallback for backward compatibility)
+                DEBUG_CONFIG.log('🚪 Starting complete logout...');
+
+                // 1. Limpiar el servicio de wallets
+                walletService.logout();
+
+                // 2. Limpiar estados locales
+                setState({ walletAddress: null, showTransactions: false });
+                setBalance('0');
+                setTransactions([]);
+                setNetworkType('shannon');
+                setIsMainnet(false);
+                setNetworkError(null);
+
+                // 3. LIMPIAR COMPLETAMENTE TODO EL STORAGE relacionado con wallets
+                await storageService.remove('isMainnet');
+                await storageService.remove('shannon_wallet');
+                await storageService.remove('morse_wallet');
+                await storageService.remove('walletAddress');
+                await storageService.remove('walletData');
+                await storageService.remove('pokt_network_type');
+                await storageService.remove('pokt_network');
+
+                // 4. Limpiar cualquier otro dato residual
+                const keys = await storageService.keys();
+                for (const key of keys) {
+                    if (key.includes('wallet') || key.includes('address') || key.includes('network')) {
+                        await storageService.remove(key);
+                        DEBUG_CONFIG.log(`🧹 Removed storage key: ${key}`);
+                    }
+                }
+
+                DEBUG_CONFIG.log('✅ Complete logout finished - all wallet data cleared');
+
+                // 5. Navegar a la página principal
+                navigate('/');
             }
-
-            DEBUG_CONFIG.log('✅ Complete logout finished - all wallet data cleared');
-
-            // 5. Navegar a la página principal
-            navigate('/');
         } catch (error) {
             DEBUG_CONFIG.error('❌ Error during logout:', error);
             // Asegurar navegación aunque haya errores
