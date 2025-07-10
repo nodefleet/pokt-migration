@@ -1,7 +1,7 @@
 // Debug Configuration
 export const DEBUG_CONFIG = {
     // Set to true to enable all console.log statements
-    ENABLED: true, // Temporarily enabled for debugging
+    ENABLED: import.meta.env.VITE_DEBUG === 'true' || import.meta.env.DEBUG === 'true' || false,
     
     // Helper function to conditionally log
     log: (...args: any[]) => {
