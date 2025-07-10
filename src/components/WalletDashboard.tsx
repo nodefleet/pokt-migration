@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { WalletDashboardProps } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
-import { ERROR_MESSAGES } from '../controller/config';
+import { ERROR_MESSAGES, DEBUG_CONFIG } from '../controller/config';
 import { WalletManager, Transaction, NetworkType } from '../controller/WalletManager';
 import LoadingSpinner from './LoadingSpinner';
 import TransactionHistory from './TransactionHistory';
@@ -21,7 +21,7 @@ interface StoredWallet {
 // Función para obtener transacciones directamente desde la API RPC de Shannon
 const fetchShannonTransactions = async (address: string): Promise<any[]> => {
     try {
-        console.log('🔍 Fetching Shannon transactions directly from RPC API...');
+        DEBUG_CONFIG.log('🔍 Fetching Shannon transactions directly from RPC API...');
 
         // URL de la API RPC de Shannon
         const rpcUrl = 'https://shannon-grove-rpc.mainnet.poktroll.com/';
@@ -67,10 +67,10 @@ const fetchShannonTransactions = async (address: string): Promise<any[]> => {
         // Combinar todas las transacciones
         const allTxs = [...sentTxs, ...receivedTxs];
 
-        console.log(`✅ Found ${allTxs.length} Shannon transactions directly from RPC`);
+        DEBUG_CONFIG.log(`✅ Found ${allTxs.length} Shannon transactions directly from RPC`);
         return allTxs;
     } catch (error) {
-        console.error('❌ Error fetching Shannon transactions directly:', error);
+        DEBUG_CONFIG.error('❌ Error fetching Shannon transactions directly:', error);
         return [];
     }
 };
@@ -81,7 +81,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     transactions: initialTransactions,
     onSwap,
     network = 'shannon',
-    isMainnet = false,
+    isMainnet = true,
     walletManager,
     onLogout
 }) => {
@@ -102,16 +102,16 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const fetchBalanceAndTransactions = useCallback(async () => {
         try {
             if (!walletAddress) {
-                console.log('No wallet address provided, skipping balance fetch');
+                DEBUG_CONFIG.log('No wallet address provided, skipping balance fetch');
                 return;
             }
 
             setLoading(true);
-            console.log(`🔄 Fetching balance and transactions for ${walletAddress} on ${network} (mainnet: ${isMainnet})`);
+            DEBUG_CONFIG.log(`🔄 Fetching balance and transactions for ${walletAddress} on ${network} (mainnet: ${isMainnet})`);
 
             // Verificar si walletManager está definido antes de usarlo
             if (!walletManager) {
-                console.warn('WalletManager no está inicializado. Esperando inicialización...');
+                DEBUG_CONFIG.warn('WalletManager no está inicializado. Esperando inicialización...');
                 setShowOfflineWarning(true);
                 setLoading(false);
                 return;
@@ -123,7 +123,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             // Obtener balance aunque estemos en modo offline (devolverá 0)
             const fetchedBalance = await walletManager.getBalance(walletAddress);
-            console.log(`💰 Fetched balance for ${walletAddress}: ${fetchedBalance}`);
+            DEBUG_CONFIG.log(`💰 Fetched balance for ${walletAddress}: ${fetchedBalance}`);
 
             // Actualizar el balance siempre, incluso cuando es 0
             setFormattedBalanceValue(formatBalance(fetchedBalance, isMainnet));
@@ -141,7 +141,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
                     // Si no hay transacciones y estamos en Shannon, intentar directamente con la API RPC
                     if (fetchedTransactions.length === 0 && network === 'shannon') {
-                        console.log('No se encontraron transacciones con el método normal, intentando directamente con RPC...');
+                        DEBUG_CONFIG.log('No se encontraron transacciones con el método normal, intentando directamente con RPC...');
                         const directTransactions = await fetchShannonTransactions(walletAddress);
                         if (directTransactions.length > 0) {
                             setTransactionsList(directTransactions);
@@ -152,11 +152,11 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                         setTransactionsList(fetchedTransactions);
                     }
                 } catch (txError) {
-                    console.error('Error obteniendo transacciones con el método normal:', txError);
+                    DEBUG_CONFIG.error('Error obteniendo transacciones con el método normal:', txError);
 
                     // Si hay un error y estamos en Shannon, intentar directamente con la API RPC
                     if (network === 'shannon') {
-                        console.log('Intentando obtener transacciones directamente con RPC debido a error...');
+                        DEBUG_CONFIG.log('Intentando obtener transacciones directamente con RPC debido a error...');
                         const directTransactions = await fetchShannonTransactions(walletAddress);
                         setTransactionsList(directTransactions);
                     } else {
@@ -167,7 +167,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 setTransactionsList([]);
             }
         } catch (error) {
-            console.error('Error al obtener datos de la wallet:', error);
+            DEBUG_CONFIG.error('Error al obtener datos de la wallet:', error);
             setShowOfflineWarning(true);
         } finally {
             setLoading(false);
@@ -179,7 +179,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         // Siempre actualizar el balance formateado, incluso cuando es 0
         if (balance !== undefined) {
             setFormattedBalanceValue(formatBalance(balance, isMainnet));
-            console.log('⚡ WalletDashboard: Balance prop updated:', balance);
+            DEBUG_CONFIG.log('⚡ WalletDashboard: Balance prop updated:', balance);
         }
     }, [balance, isMainnet]);
 
@@ -187,7 +187,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     useEffect(() => {
         // Solo intentar obtener datos si tenemos una dirección válida
         if (walletAddress) {
-            console.log(`⚡ WalletDashboard: Wallet/network changed - fetching data for ${walletAddress} (${network})`);
+            DEBUG_CONFIG.log(`⚡ WalletDashboard: Wallet/network changed - fetching data for ${walletAddress} (${network})`);
             fetchBalanceAndTransactions();
         }
     }, [walletManager, walletAddress, network, isMainnet, fetchBalanceAndTransactions]);
@@ -204,7 +204,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                     shannon: shannonWallet || undefined
                 });
             } catch (error) {
-                console.error('Error al cargar wallets:', error);
+                DEBUG_CONFIG.error('Error al cargar wallets:', error);
                 setError('Error al cargar las wallets guardadas');
             }
         };
@@ -215,19 +215,19 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     // Escuchar cambios en el storage para actualizar automáticamente
     useEffect(() => {
         const handleStorageUpdate = () => {
-            console.log('📦 Storage updated in WalletDashboard - refreshing data...');
+            DEBUG_CONFIG.log('📦 Storage updated in WalletDashboard - refreshing data...');
             fetchBalanceAndTransactions();
         };
 
         const handleWalletDataUpdate = (event: CustomEvent) => {
             const { address, balance } = event.detail;
-            console.log(`💰 WalletDashboard received wallet_data_updated event for ${address} with balance ${balance}`);
+            DEBUG_CONFIG.log(`💰 WalletDashboard received wallet_data_updated event for ${address} with balance ${balance}`);
 
             // Solo actualizar si es para nuestra wallet actual
             if (address === walletAddress) {
                 // Siempre actualizar el balance, incluso si es 0
                 setFormattedBalanceValue(formatBalance(balance, isMainnet));
-                console.log(`💰 Balance updated to: ${balance} (formatted: ${formatBalance(balance, isMainnet)})`);
+                DEBUG_CONFIG.log(`💰 Balance updated to: ${balance} (formatted: ${formatBalance(balance, isMainnet)})`);
             }
         };
 
@@ -249,7 +249,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const handleReconnect = async () => {
         try {
             if (!walletManager) {
-                console.warn('WalletManager no está inicializado');
+                DEBUG_CONFIG.warn('WalletManager no está inicializado');
                 return;
             }
             setLoading(true);
@@ -257,7 +257,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
-            console.log(`🔍 DEBUG WalletDashboard handleReconnect: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
+            DEBUG_CONFIG.log(`🔍 DEBUG WalletDashboard handleReconnect: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
             await walletManager.switchNetwork(network, isTestnet);
             await fetchBalanceAndTransactions();
@@ -273,7 +273,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const handleSwitchToShannon = async () => {
         try {
             if (!walletManager) {
-                console.warn('WalletManager no está inicializado');
+                DEBUG_CONFIG.warn('WalletManager no está inicializado');
                 return;
             }
             setLoading(true);
@@ -281,7 +281,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
-            console.log(`🔍 DEBUG WalletDashboard handleSwitchToShannon: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
+            DEBUG_CONFIG.log(`🔍 DEBUG WalletDashboard handleSwitchToShannon: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
             await walletManager.switchNetwork('shannon', isTestnet);
             await fetchBalanceAndTransactions();
@@ -297,7 +297,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const handleNetworkSwitch = async (newNetwork: NetworkType) => {
         try {
             if (!walletManager) {
-                console.warn('WalletManager no está inicializado');
+                DEBUG_CONFIG.warn('WalletManager no está inicializado');
                 return;
             }
 
@@ -317,7 +317,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             setLoading(false);
         } catch (error) {
-            console.error('Error al cambiar de red:', error);
+            DEBUG_CONFIG.error('Error al cambiar de red:', error);
             setError(error instanceof Error ? error.message : 'Error al cambiar de red');
             setLoading(false);
         }
@@ -326,7 +326,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     // Función para abrir el diálogo de migración
     const handleMigrationRequest = async () => {
         try {
-            console.log('🔄 Opening migration dialog...');
+            DEBUG_CONFIG.log('🔄 Opening migration dialog...');
 
             // Verificar si hay wallets de Morse disponibles
             const morseWalletsData = await storageService.get<any[]>('morse_wallets');
@@ -342,14 +342,14 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
             // Si no hay wallets de Morse, redirigir a la página de importación de Morse
             if (!hasMorseWallets) {
-                console.log('⚠️ No Morse wallets found. Redirecting to import page...');
+                DEBUG_CONFIG.log('⚠️ No Morse wallets found. Redirecting to import page...');
                 navigate('/import/individual?network=morse&message=You need to import your Morse wallet first to perform migration.');
                 return;
             }
 
             // Si no hay wallets de Shannon, redirigir a la página de importación de Shannon
             if (!hasShannonWallets) {
-                console.log('⚠️ No Shannon wallets found. Redirecting to import page...');
+                DEBUG_CONFIG.log('⚠️ No Shannon wallets found. Redirecting to import page...');
                 navigate('/import/individual?network=shannon&message=You need to import your Shannon wallet first to perform migration.');
                 return;
             }
@@ -365,7 +365,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             setMorsePrivateKey(privateKey);
             setShowMigrationDialog(true);
         } catch (error) {
-            console.error('❌ Error opening migration dialog:', error);
+            DEBUG_CONFIG.error('❌ Error opening migration dialog:', error);
             setError('Error al abrir el diálogo de migración');
         }
     };
@@ -404,7 +404,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleMigrationRequest() },
         {
             label: 'Import Wallet', icon: '📥', color: 'from-green-600/30 to-emerald-600/30', onClick: () => {
-                console.log('Navigating to import individual...');
+                DEBUG_CONFIG.log('Navigating to import individual...');
                 navigate('/import/individual');
             }
         }
@@ -412,7 +412,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleMigrationRequest() },
         {
             label: 'Import Wallet', icon: '📥', color: 'from-green-600/30 to-emerald-600/30', onClick: () => {
-                console.log('Navigating to import individual...');
+                DEBUG_CONFIG.log('Navigating to import individual...');
                 navigate('/import/individual');
             }
         }
@@ -437,7 +437,11 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                         <span className={`w-3 h-3 rounded-full mr-2 ${isOffline ? 'bg-red-500' : 'bg-green-500'}`}></span>
                         <span className="font-medium">
                             Network {network.charAt(0).toUpperCase() + network.slice(1)}
-                            {network === 'shannon' ? isMainnet === true ? ' Mainnet' : ' Testnet' : ' Mainnet'}
+                            {(() => {
+                                DEBUG_CONFIG.log('🔍 DEBUG isMainnet:', { value: isMainnet, type: typeof isMainnet, boolean: Boolean(isMainnet) });
+                                const isMainnetBool = Boolean(isMainnet);
+                                return isMainnetBool ? ' Mainnet' : ' Testnet';
+                            })()}
                             {isOffline ? ' - Offline Mode' : ''}
                         </span>
                     </div>
