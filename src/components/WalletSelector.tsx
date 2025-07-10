@@ -173,15 +173,41 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
             }
 
             if (privateKey) {
-                // Si la respuesta parece ser un objeto JSON, formatearla para mejor visualización
-                if (privateKey.startsWith('{') && privateKey.endsWith('}')) {
+                // Verificar si es un mnemónico (12 o 24 palabras separadas por espacios)
+                const words = privateKey.trim().split(/\s+/);
+                if (words.length === 12 || words.length === 24) {
+                    // Es un mnemónico, mostrarlo directamente
+                    setPrivateKeyData(privateKey);
+                }
+                // Verificar si es un objeto JSON
+                else if (privateKey.startsWith('{') && privateKey.endsWith('}')) {
                     try {
                         const jsonObj = JSON.parse(privateKey);
-                        setPrivateKeyData('Wallet Information:\n' + JSON.stringify(jsonObj, null, 2));
+
+                        // Si el objeto tiene un campo mnemonic o serialized que es un mnemónico, mostrar ese valor
+                        if (jsonObj.mnemonic && typeof jsonObj.mnemonic === 'string') {
+                            setPrivateKeyData(jsonObj.mnemonic);
+                        }
+                        // Si no hay mnemonic pero hay serialized y parece un mnemónico
+                        else if (jsonObj.serialized && typeof jsonObj.serialized === 'string') {
+                            const serializedWords = jsonObj.serialized.trim().split(/\s+/);
+                            if (serializedWords.length === 12 || serializedWords.length === 24) {
+                                setPrivateKeyData(jsonObj.serialized);
+                            } else {
+                                // Si no es un mnemónico, mostrar el objeto completo formateado
+                                setPrivateKeyData(JSON.stringify(jsonObj, null, 2));
+                            }
+                        }
+                        // Si no hay campos específicos reconocibles, mostrar el objeto completo
+                        else {
+                            setPrivateKeyData(JSON.stringify(jsonObj, null, 2));
+                        }
                     } catch {
+                        // Si no se puede parsear como JSON, mostrar como texto plano
                         setPrivateKeyData(privateKey);
                     }
                 } else {
+                    // Cualquier otro formato (clave hexadecimal, etc.)
                     setPrivateKeyData(privateKey);
                 }
             } else {
