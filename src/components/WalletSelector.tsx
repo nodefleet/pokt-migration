@@ -471,7 +471,12 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                     >
                         <h3 className="text-xl font-bold mb-2 text-white flex items-center">
                             <i className="fas fa-exclamation-triangle text-red-500 mr-2"></i>
-                            Private Key - DANGER ZONE
+                            {privateKeyData && (
+                                privateKeyData.trim().split(/\s+/).length === 12 || privateKeyData.trim().split(/\s+/).length === 24
+                                    ? "Recovery Phrase - DANGER ZONE"
+                                    : "Private Key - DANGER ZONE"
+                            )}
+                            {!privateKeyData && "Wallet Secrets - DANGER ZONE"}
                         </h3>
 
                         <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 mb-4">
@@ -495,9 +500,29 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                         {privateKeyData}
                                     </div>
                                 ) : (
-                                    <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
-                                        {privateKeyData}
-                                    </div>
+                                    // Verificar si es un mnemónico (12 o 24 palabras)
+                                    privateKeyData.trim().split(/\s+/).length === 12 || privateKeyData.trim().split(/\s+/).length === 24 ? (
+                                        <div>
+                                            <p className="text-xs text-blue-400 mb-2 font-semibold">Mnemonic Phrase (Secret Recovery Phrase):</p>
+                                            <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
+                                                {privateKeyData}
+                                            </div>
+                                        </div>
+                                    ) : privateKeyData.startsWith('{') ? (
+                                        <div>
+                                            <p className="text-xs text-blue-400 mb-2 font-semibold">Wallet Information:</p>
+                                            <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
+                                                {privateKeyData}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <p className="text-xs text-blue-400 mb-2 font-semibold">Private Key:</p>
+                                            <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
+                                                {privateKeyData}
+                                            </div>
+                                        </div>
+                                    )
                                 )
                             ) : (
                                 <div className="flex justify-center py-4">
