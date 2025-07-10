@@ -7,7 +7,7 @@ export interface AppState {
 
 export interface HeaderProps {
     walletAddress: string | null;
-    onLogout?: () => void;
+    onLogout?: (network?: NetworkType) => void;
 }
 
 export interface WalletImportResult {
@@ -47,7 +47,7 @@ export interface WalletDashboardProps {
     network: NetworkType;
     isMainnet: boolean;
     walletManager?: WalletManager;
-    onLogout: () => void;
+    onLogout: (network?: NetworkType) => void;
     onNetworkChange: (network: NetworkType) => Promise<void>;
 }
 

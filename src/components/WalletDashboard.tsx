@@ -100,6 +100,22 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const [showMigrationDialog, setShowMigrationDialog] = useState<boolean>(false);
     const [morsePrivateKey, setMorsePrivateKey] = useState<string | null>(null);
     const navigate = useNavigate();
+    // NOTE: Do NOT call onLogout directly from parent or on button click. Only call from handleLogoutConfirm/modal.
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+    const handleLogoutClick = () => {
+        setShowLogoutConfirm(true);
+    };
+
+    const handleLogoutConfirm = () => {
+        setShowLogoutConfirm(false);
+        // Pass the current network to onLogout for network-specific logout
+        onLogout(network);
+    };
+
+    const handleLogoutCancel = () => {
+        setShowLogoutConfirm(false);
+    };
 
     const fetchBalanceAndTransactions = useCallback(async () => {
         try {
@@ -447,15 +463,45 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                             {isOffline ? ' - Offline Mode' : ''}
                         </span>
                     </div>
-                    <button
-                        onClick={onLogout}
-                        className="text-gray-400 hover:text-white transition-colors"
-                        title="Logout"
-                    >
-                        <i className="fas fa-sign-out-alt"></i>
-                    </button>
                 </div>
             </header>
+            {/* Logout Confirmation Modal (always rendered at root) */}
+            <AnimatePresence>
+                {showLogoutConfirm && (
+                    <motion.div
+                        className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    >
+                        <motion.div
+                            className="bg-gray-900 rounded-xl p-8 border-2 border-gray-700 shadow-xl max-w-sm w-full text-center"
+                            initial={{ scale: 0.95, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.95, y: 20 }}
+                        >
+                            <h2 className="text-xl font-bold mb-4">Confirm Logout</h2>
+                            <p className="mb-6 text-gray-300">
+                                Are you sure you want to logout from your {network.charAt(0).toUpperCase() + network.slice(1)} wallet?
+                            </p>
+                            <div className="flex justify-center gap-4">
+                                <button
+                                    className="px-6 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold"
+                                    onClick={handleLogoutConfirm}
+                                >
+                                    Yes, Logout
+                                </button>
+                                <button
+                                    className="px-6 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold"
+                                    onClick={handleLogoutCancel}
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             <main className="container mx-auto px-4 py-8">
                 <AnimatePresence mode="wait">
