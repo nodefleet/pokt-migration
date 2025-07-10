@@ -131,8 +131,8 @@ const App: React.FC = () => {
                         console.log('Shannon wallet updated - RESPECTING saved isMainnet:', savedIsMainnet);
                     } else {
                         // Solo usar TESTNET por defecto si NO HAY configuración previa
-                        setIsMainnet(false);
-                        await storageService.set('isMainnet', false);
+                        setIsMainnet(true);
+                        await storageService.set('isMainnet', true);
                         console.log('Shannon wallet updated - using TESTNET default (NO previous config)');
                     }
 
@@ -159,8 +159,8 @@ const App: React.FC = () => {
                         console.log('Morse wallet updated - RESPECTING saved isMainnet:', savedIsMainnet);
                     } else {
                         // Si no hay configuración previa, usar false como default para Morse
-                        setIsMainnet(false);
-                        await storageService.set('isMainnet', false);
+                        setIsMainnet(true);
+                        await storageService.set('isMainnet', true);
                         console.log('Morse wallet updated - using testnet as default (NO previous config)');
                     }
 
@@ -201,7 +201,7 @@ const App: React.FC = () => {
                 } else {
                     // Si no hay cache, defaultear a testnet
                     setIsMainnet(false);
-                    await storageService.set('isMainnet', false);
+                    await storageService.set('isMainnet', true);
                     console.log('📍 No cached isMainnet - defaulting to testnet');
                 }
 
@@ -316,13 +316,11 @@ const App: React.FC = () => {
                     console.log(`💾 Using saved isMainnet from storage: ${savedIsMainnet}`);
                 } else {
                     setIsMainnet(walletInfo.isMainnet);
-                    await storageService.set('isMainnet', walletInfo.isMainnet);
                     console.log(`🔧 Set isMainnet from walletInfo: ${walletInfo.isMainnet}`);
                 }
             } else {
                 // Nueva importación - usar el valor detectado y guardarlo
                 setIsMainnet(walletInfo.isMainnet);
-                await storageService.set('isMainnet', walletInfo.isMainnet);
                 console.log(`🆕 New import - set isMainnet: ${walletInfo.isMainnet}`);
             }
 
@@ -373,7 +371,6 @@ const App: React.FC = () => {
 
             // Para nueva wallet creada, usar el valor detectado y guardarlo
             setIsMainnet(walletInfo.isMainnet);
-            await storageService.set('isMainnet', walletInfo.isMainnet);
             console.log(`💾 New wallet created - saving isMainnet: ${walletInfo.isMainnet}`);
 
             // Importante: Cargar los datos de la wallet antes de navegar
@@ -463,19 +460,17 @@ const App: React.FC = () => {
                         // USAR DIRECTAMENTE lo que selecciona el usuario - SIN DETECCIÓN
                         if (isMainnetSelected !== undefined) {
                             setIsMainnet(isMainnetSelected);
-                            // Guardar la selección manual en storage
-                            await storageService.set('isMainnet', isMainnetSelected);
                             console.log(`🎯 MANUAL mainnet selection: ${isMainnetSelected} - SAVED TO STORAGE`);
                         } else {
                             // Solo para Shannon cuando no se especifica, usar TESTNET por defecto
                             if (network === 'shannon') {
-                                setIsMainnet(false);
-                                await storageService.set('isMainnet', false);
+                                setIsMainnet(true);
+                                await storageService.set('isMainnet', true);
                                 console.log(`📍 Shannon TESTNET default (NO manual selection)`);
                             } else {
                                 // Morse siempre testnet
-                                setIsMainnet(false);
-                                await storageService.set('isMainnet', false);
+                                setIsMainnet(true);
+                                await storageService.set('isMainnet', true);
                                 console.log(`🟡 MORSE always testnet - SAVED TO STORAGE`);
                             }
                         }
@@ -519,8 +514,8 @@ const App: React.FC = () => {
 
                         // MANTENER LA CONFIGURACIÓN ACTUAL DE MAINNET/TESTNET - NO SOBRESCRIBIR
                         if (network === 'morse') {
-                            setIsMainnet(false); // Morse siempre testnet
-                            await storageService.set('isMainnet', false);
+                            setIsMainnet(true); // Morse siempre testnet
+                            await storageService.set('isMainnet', true);
                             console.log(`🟡 MORSE network selected - always testnet`);
                         } else {
                             // Para Shannon: MANTENER la configuración actual del usuario
@@ -530,8 +525,8 @@ const App: React.FC = () => {
                                 console.log(`🔵 SHANNON network selected - MAINTAINING user preference: ${currentIsMainnet === true ? 'mainnet' : 'testnet'}`);
                             } else {
                                 // Solo si no hay configuración previa, usar TESTNET por defecto
-                                setIsMainnet(false);
-                                await storageService.set('isMainnet', false);
+                                setIsMainnet(true);
+                                await storageService.set('isMainnet', true);
                                 console.log(`🔵 SHANNON network selected - using TESTNET default (NO previous config)`);
                             }
                         }
@@ -569,9 +564,6 @@ const App: React.FC = () => {
 
                         // Actualizar estado inmediatamente
                         setIsMainnet(isMainnetSelected);
-
-                        // GUARDAR EN STORAGE para persistir la selección manual
-                        await storageService.set('isMainnet', isMainnetSelected);
                         console.log(`💾 Mainnet preference saved to storage: ${isMainnetSelected}`);
 
                         // Reconfigurar la red con la nueva configuración
@@ -631,8 +623,8 @@ const App: React.FC = () => {
 
                                             // MANTENER LA CONFIGURACIÓN ACTUAL DE MAINNET/TESTNET - NO SOBRESCRIBIR
                                             if (network === 'morse') {
-                                                setIsMainnet(false); // Morse siempre testnet
-                                                await storageService.set('isMainnet', false);
+                                                setIsMainnet(true); // Morse siempre testnet
+                                                await storageService.set('isMainnet', true);
                                             } else {
                                                 // Para Shannon: MANTENER la configuración actual del usuario
                                                 const currentIsMainnet = await storageService.get<boolean>('isMainnet');
@@ -641,8 +633,8 @@ const App: React.FC = () => {
                                                     console.log(`🔵 WalletDashboard: MAINTAINING user preference: ${currentIsMainnet === true ? 'mainnet' : 'testnet'}`);
                                                 } else {
                                                     // Solo si no hay configuración previa, usar TESTNET por defecto
-                                                    setIsMainnet(false);
-                                                    await storageService.set('isMainnet', false);
+                                                    setIsMainnet(true);
+                                                    await storageService.set('isMainnet', true);
                                                     console.log(`🔵 WalletDashboard: using TESTNET default (NO previous config)`);
                                                 }
                                             }

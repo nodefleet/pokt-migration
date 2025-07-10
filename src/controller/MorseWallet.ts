@@ -322,7 +322,7 @@ export class MorseWalletService {
             const savedIsMainnet = await storageService.get<boolean>('isMainnet');
             if (savedIsMainnet === null || savedIsMainnet === undefined) {
                 // Solo establecer testnet como default si no hay configuración previa
-                await storageService.set('isMainnet', false);
+                await storageService.set('isMainnet', true);
             }
 
             if (!firstWalletInfo) {

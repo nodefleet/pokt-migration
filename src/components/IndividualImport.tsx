@@ -81,6 +81,9 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             setMorseError('Please enter a valid private key');
             return;
         }
+        await storageService.set('isMainnet', true);
+        console.log('🎯 IndividualImport: Estableciendo isMainnet=true por defecto al importar');
+
 
         setMorseLoading(true);
         setMorseError('');
@@ -182,6 +185,11 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
         try {
             setLoading(true);
+
+            // ESTABLECER isMainnet como TRUE antes de importar la wallet
+            await storageService.set('isMainnet', true);
+            console.log('🎯 IndividualImport: Estableciendo isMainnet=true por defecto al importar');
+
             // 1) Importar en WalletService
             const importResult = await onWalletImport(shannonInput, shannonPassword, 'shannon');
 
@@ -270,6 +278,11 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
         try {
             setLoading(true);
+
+            // ESTABLECER isMainnet como TRUE antes de crear la wallet
+            await storageService.set('isMainnet', true);
+            console.log('🎯 IndividualImport: Estableciendo isMainnet=true por defecto al crear wallet');
+
             // Call onCreateWallet from main.tsx instead of using the direct hook
             await onCreateWallet(password, 'shannon');
             console.log("Shannon Wallet created successfully via main.tsx");

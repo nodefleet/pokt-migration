@@ -237,7 +237,6 @@ export class WalletService {
                         // Solo si NO hay configuración existente, usar detección
                         finalIsMainnet = Boolean(correctConfig.isMainnet === true); // FORZAR booleano válido
                         this.isMainnet = finalIsMainnet;
-                        await storageService.set('isMainnet', finalIsMainnet);
                         console.log(`🔧 validateAndCleanWallets: NO existing config - setting from detection: ${finalIsMainnet === true ? 'mainnet' : 'testnet'}`);
                     }
 
@@ -380,8 +379,6 @@ export class WalletService {
             this.networkType = finalNetwork;
             this.isMainnet = finalIsMainnet;
             storageService.set(STORAGE_KEYS.NETWORK_TYPE, finalNetwork);
-            // GUARDAR LA SELECCIÓN EXPLÍCITA DEL USUARIO
-            storageService.set('isMainnet', finalIsMainnet);
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !finalIsMainnet;
@@ -541,7 +538,6 @@ export class WalletService {
             this.networkType = finalNetwork;
             this.isMainnet = finalIsMainnet;
             storageService.set(STORAGE_KEYS.NETWORK_TYPE, finalNetwork);
-            storageService.set('isMainnet', finalIsMainnet);
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !finalIsMainnet;
@@ -820,8 +816,6 @@ export class WalletService {
             this.networkType = network;
             this.isMainnet = isMainnetBool;
             storageService.set(STORAGE_KEYS.NETWORK_TYPE, network);
-            // Guardar la selección del usuario
-            storageService.set('isMainnet', isMainnetBool);
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !isMainnetBool; // Negar directamente - más simple y confiable

@@ -40,16 +40,6 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         const loadInitialData = async () => {
             // Cargar wallets
             await loadAvailableWallets();
-
-            // Cargar la configuración guardada de isMainnet
-            const savedIsMainnet = await storageService.get<boolean>('isMainnet') as boolean;
-            console.log('🎯 WalletSelector: Cargando configuración de red:', savedIsMainnet);
-            setSelectedMainnet(savedIsMainnet !== null ? savedIsMainnet : false);
-
-            // Notificar al padre si existe el callback
-            if (onMainnetChange) {
-                onMainnetChange(savedIsMainnet !== null ? savedIsMainnet : false);
-            }
         };
 
         loadInitialData();
@@ -66,13 +56,6 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
             window.removeEventListener('storage_updated', handleStorageUpdate);
         };
     }, []); // SIN DEPENDENCIAS para que solo se ejecute una vez
-
-    // Sincronizar con cambios externos de isMainnet
-    useEffect(() => {
-        if (isMainnet !== undefined && isMainnet !== selectedMainnet) {
-            setSelectedMainnet(isMainnet);
-        }
-    }, [isMainnet, selectedMainnet]);
 
     const loadAvailableWallets = async () => {
         // Usar el nuevo método del walletService para obtener todas las wallets
@@ -219,6 +202,11 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
         }
     };
 
+    useEffect(() => {
+        const isMainnet = storageService.getSync<boolean>('isMainnet') as boolean;
+        setSelectedMainnet(isMainnet);
+    }, []);
+
     // Determinar qué redes están disponibles
     const availableNetworks = [];
     if (hasShannon) availableNetworks.push('shannon');
@@ -317,16 +305,11 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                         </svg>
                                     </div>
                                     <select
-                                        value={selectedMainnet === true ? 'mainnet' : 'testnet'}
+                                        value={selectedMainnet ? 'mainnet' : 'testnet'}
                                         onChange={(e) => {
                                             const newIsMainnet = e.target.value === 'mainnet';
                                             setSelectedMainnet(newIsMainnet);
-
-                                            // GUARDAR INMEDIATAMENTE EN STORAGE cuando el usuario cambie
-                                            storageService.set('isMainnet', newIsMainnet).then(() => {
-                                                console.log('🎯 WalletSelector: Mainnet preference saved to storage:', newIsMainnet === true ? 'mainnet' : 'testnet');
-                                            });
-
+                                            storageService.set('isMainnet', newIsMainnet)
                                             // Notificar el cambio al componente padre si existe el callback
                                             if (onMainnetChange) {
                                                 onMainnetChange(newIsMainnet);
@@ -500,29 +483,9 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                         {privateKeyData}
                                     </div>
                                 ) : (
-                                    // Verificar si es un mnemónico (12 o 24 palabras)
-                                    privateKeyData.trim().split(/\s+/).length === 12 || privateKeyData.trim().split(/\s+/).length === 24 ? (
-                                        <div>
-                                            <p className="text-xs text-blue-400 mb-2 font-semibold">Mnemonic Phrase (Secret Recovery Phrase):</p>
-                                            <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
-                                                {privateKeyData}
-                                            </div>
-                                        </div>
-                                    ) : privateKeyData.startsWith('{') ? (
-                                        <div>
-                                            <p className="text-xs text-blue-400 mb-2 font-semibold">Wallet Information:</p>
-                                            <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
-                                                {privateKeyData}
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div>
-                                            <p className="text-xs text-blue-400 mb-2 font-semibold">Private Key:</p>
-                                            <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
-                                                {privateKeyData}
-                                            </div>
-                                        </div>
-                                    )
+                                    <div className="break-all font-mono text-sm text-gray-300 bg-gray-900 p-3 rounded border border-gray-700">
+                                        {privateKeyData}
+                                    </div>
                                 )
                             ) : (
                                 <div className="flex justify-center py-4">
