@@ -4,6 +4,7 @@ import { navigate } from "wouter/use-browser-location";
 import { DirectSecp256k1HdWallet, DirectSecp256k1Wallet } from "@cosmjs/proto-signing";
 import { useMutation, UseMutationResult } from "@tanstack/react-query";
 import { sha256 } from '@cosmjs/crypto';
+import { DEBUG_CONFIG } from './config';
 
 // Importar configuración para pocket-js
 import './pocketjs-config';
@@ -66,6 +67,40 @@ export class MorseWalletService {
     private currentAddress: string | null = null;
 
     /**
+     * Detecta si es un archivo PPK (armored keypair) de Morse
+     */
+    private isMorsePPKFile(code: string): boolean {
+        try {
+            const trimmed = code.trim();
+            
+            // Verificar formato básico JSON
+            if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) {
+                return false;
+            }
+
+            // Debe ser JSON válido
+            const parsed = JSON.parse(trimmed);
+
+            // Verificar campos específicos de PPK
+            const hasKdf = parsed.kdf && typeof parsed.kdf === 'string';
+            const hasSalt = parsed.salt && typeof parsed.salt === 'string';
+            const hasCiphertext = parsed.ciphertext && typeof parsed.ciphertext === 'string';
+            const hasHint = parsed.hint && typeof parsed.hint === 'string';
+
+            // Verificar que sea formato scrypt (común en PPK)
+            const isScryptFormat = hasKdf && parsed.kdf === 'scrypt';
+            const hasSecparam = parsed.secparam && typeof parsed.secparam === 'string';
+
+            // También verificar si tiene el formato de PocketJS PPK
+            const isPocketPPK = hasKdf && hasSalt && hasCiphertext && hasHint;
+
+            return isPocketPPK && (isScryptFormat || hasSecparam);
+        } catch (error: unknown) {
+            return false;
+        }
+    }
+
+    /**
      * Detecta si es un JSON de wallet Morse con formato {"addr": "...", "name": "...", "priv": "..."}
      */
     private isMorseJsonWallet(code: string): boolean {
@@ -93,10 +128,15 @@ export class MorseWalletService {
     }
 
     /**
-     * Detecta si es una clave privada de Morse (128 caracteres hex o formato JSON)
+     * Detecta si es una clave privada de Morse (128 caracteres hex, formato JSON, o PPK)
      * Método público para ser utilizado por WalletService
      */
     public detectMorseWallet(code: string): boolean {
+        // Si es archivo PPK (armored keypair)
+        if (this.isMorsePPKFile(code)) {
+            return true;
+        }
+
         // Si es JSON de wallet Morse
         if (this.isMorseJsonWallet(code)) {
             return true;
@@ -147,24 +187,125 @@ export class MorseWalletService {
                 account: account
             };
         } catch (error) {
-            console.error('❌ Error parsing Morse JSON:', error);
+            DEBUG_CONFIG.error('❌ Error parsing Morse JSON:', error);
             throw error;
         }
     }
 
     /**
-     * Importa una wallet de Morse (formato JSON o clave privada hex)
+     * Importa una wallet de Morse (formato JSON, clave privada hex, o PPK)
      */
     async importMorsePrivateKey(code: string, password: string): Promise<{ address: string, serialized: string }> {
         try {
             const trimmedCode = code.trim();
+
+            // Verificar si es un archivo PPK (armored keypair)
+            if (this.isMorsePPKFile(trimmedCode)) {
+                DEBUG_CONFIG.log('🔐 Detectado archivo PPK (armored keypair), usando pocket-js KeyManager.fromPPK');
+
+                try {
+                    // Always pass the PPK as a string to KeyManager.fromPPK
+                    let ppkString: string;
+                    try {
+                        // If already a string, use as-is; if object, stringify
+                        const maybeObj = JSON.parse(trimmedCode);
+                        if (typeof maybeObj === 'object') {
+                            ppkString = JSON.stringify(maybeObj);
+                        } else {
+                            ppkString = trimmedCode;
+                        }
+                    } catch (e) {
+                        // Not JSON, use as-is
+                        ppkString = trimmedCode;
+                    }
+
+                    DEBUG_CONFIG.log('🔐 Using PPK string for import:', {
+                        preview: ppkString.substring(0, 100) + '...'
+                    });
+
+                    let keyManager;
+                    try {
+                        DEBUG_CONFIG.log('🔐 Trying PPK import with password and string...');
+                        keyManager = await KeyManager.fromPPK({ 
+                            ppk: ppkString,
+                            password 
+                        });
+                    } catch (ppkError: any) {
+                        DEBUG_CONFIG.error('❌ PPK import failed with password:', ppkError.message);
+                        throw new Error(`PPK import failed: ${ppkError.message}. Please verify the password and PPK format.`);
+                    }
+
+                    // Obtener dirección y clave pública
+                    const address = keyManager.getAddress();
+                    const publicKey = keyManager.getPublicKey();
+
+                    DEBUG_CONFIG.log('✅ Wallet PPK importada correctamente con pocket-js:', {
+                        address,
+                        publicKey: publicKey.substring(0, 10) + '...'
+                    });
+
+                    // Crear objeto wallet en formato Morse
+                    const morseWallet = {
+                        addr: address,
+                        name: `morse_ppk_${address.substring(0, 8)}`,
+                        priv: '', // PPK no expone la clave privada directamente
+                        account: 0,
+                        ppkData: ppkString // Guardar los datos PPK originales como string
+                    };
+
+                    // Serializar para almacenamiento
+                    const serialized = JSON.stringify(morseWallet);
+
+                    // Guardar en storage
+                    const { storageService } = await import('./storage.service');
+                    
+                    // Obtener lista existente de wallets
+                    const existingData = await storageService.get<any>('morse_wallets');
+                    const existing: any[] = Array.isArray(existingData) ? existingData : [];
+
+                    // Comprobar si ya existe esta wallet (evitar duplicados)
+                    const isDuplicate = existing.some((w: any) =>
+                        (w.parsed?.addr === address)
+                    );
+
+                    if (!isDuplicate) {
+                        // Añadir a la lista de wallets
+                        existing.push({
+                            id: 'morse_ppk_' + Date.now() + Math.random().toString(16).slice(2, 6),
+                            serialized: serialized,
+                            parsed: morseWallet,
+                            network: 'morse',
+                            timestamp: Date.now()
+                        });
+
+                        // Guardar lista actualizada
+                        await storageService.set('morse_wallets', existing);
+                    }
+
+                    this.currentAddress = address;
+
+                    return {
+                        address: address,
+                        serialized: serialized
+                    };
+                } catch (error: any) {
+                    DEBUG_CONFIG.error('❌ Error importando PPK con pocket-js:', error);
+                    DEBUG_CONFIG.error('❌ PPK data that failed:', trimmedCode.substring(0, 200) + '...');
+                    DEBUG_CONFIG.error('❌ Error details:', {
+                        message: error.message,
+                        stack: error.stack,
+                        name: error.name
+                    });
+                    throw new Error(`Error importando archivo PPK: ${error.message}`);
+                }
+            }
 
             // Verificar si es una clave privada hexadecimal directa (128 caracteres)
             const cleanHex = trimmedCode.startsWith('0x') ? trimmedCode.substring(2) : trimmedCode;
             const isHexPrivateKey = /^[0-9a-fA-F]{128}$/i.test(cleanHex);
 
             if (isHexPrivateKey) {
-                console.log('🔑 Detectada clave privada en formato hexadecimal, usando pocket-js KeyManager');
+                DEBUG_CONFIG.log('🔑 Detectada clave privada en formato hexadecimal, usando pocket-js KeyManager');
 
                 try {
                     // Usar KeyManager de pocket-js para importar la clave privada
@@ -174,7 +315,7 @@ export class MorseWalletService {
                     const address = keyManager.getAddress();
                     const publicKey = keyManager.getPublicKey();
 
-                    console.log('✅ Wallet importada correctamente con pocket-js:', {
+                    DEBUG_CONFIG.log('✅ Wallet importada correctamente con pocket-js:', {
                         address,
                         publicKey: publicKey.substring(0, 10) + '...'
                     });
@@ -190,6 +331,32 @@ export class MorseWalletService {
                     // Serializar para almacenamiento
                     const serialized = JSON.stringify(morseWallet);
 
+                    // Guardar en storage
+                    const { storageService } = await import('./storage.service');
+                    
+                    // Obtener lista existente de wallets
+                    const existingData = await storageService.get<any>('morse_wallets');
+                    const existing: any[] = Array.isArray(existingData) ? existingData : [];
+
+                    // Comprobar si ya existe esta wallet (evitar duplicados)
+                    const isDuplicate = existing.some((w: any) =>
+                        (w.parsed?.addr === address)
+                    );
+
+                    if (!isDuplicate) {
+                        // Añadir a la lista de wallets
+                        existing.push({
+                            id: 'morse_' + Date.now() + Math.random().toString(16).slice(2, 6),
+                            serialized: serialized,
+                            parsed: morseWallet,
+                            network: 'morse',
+                            timestamp: Date.now()
+                        });
+
+                        // Guardar lista actualizada
+                        await storageService.set('morse_wallets', existing);
+                    }
+
                     this.currentAddress = address;
 
                     return {
@@ -197,7 +364,7 @@ export class MorseWalletService {
                         serialized: serialized
                     };
                 } catch (error: any) {
-                    console.error('❌ Error importando con pocket-js:', error);
+                    DEBUG_CONFIG.error('❌ Error importando con pocket-js:', error);
                     throw new Error(`Error importando clave privada: ${error.message}`);
                 }
             }
@@ -331,7 +498,7 @@ export class MorseWalletService {
 
             return firstWalletInfo;
         } catch (error: any) {
-            console.error('❌ Error importing Morse wallet:', error.message);
+            DEBUG_CONFIG.error('❌ Error importing Morse wallet:', error.message);
             throw new Error(`Could not import Morse wallet: ${error.message}`);
         }
     }
@@ -359,7 +526,7 @@ export class MorseWalletService {
             await storageService.remove('walletAddress');
             await storageService.remove('walletData');
         } catch (error) {
-            console.error('❌ Error during MORSE logout:', error);
+            DEBUG_CONFIG.error('❌ Error during MORSE logout:', error);
         }
     }
 
@@ -385,7 +552,7 @@ export class MorseWalletService {
                 return null;
             }
         } catch (error) {
-            console.error('❌ Error getting Morse private key:', error);
+            DEBUG_CONFIG.error('❌ Error getting Morse private key:', error);
             return null;
         }
     }
