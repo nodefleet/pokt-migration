@@ -112,7 +112,7 @@ async function detectAndDeserializeWallet(serialization: string, password: strin
         if (account) {
             console.log('✅ Wallet deserialized with TESTNET default:', account.address);
             // Guardar configuración por defecto
-            await storageService.set('isMainnet', false);
+            await storageService.set('isMainnet', true);
             return { wallet, address: account.address, isMainnet: false };
         }
     } catch (error) {
@@ -165,7 +165,7 @@ async function importFromMnemonic(mnemonic: string, password: string): Promise<{
         if (account) {
             console.log('✅ Mnemonic wallet created with TESTNET default:', account.address);
             // Guardar configuración por defecto
-            await storageService.set('isMainnet', false);
+            await storageService.set('isMainnet', true);
             return { wallet, address: account.address, isMainnet: false };
         }
     } catch (error) {
