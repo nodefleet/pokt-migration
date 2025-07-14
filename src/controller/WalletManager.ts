@@ -230,9 +230,12 @@ export class WalletManager {
      */
     async createWallet(password: string): Promise<{ address: string; serializedWallet: string; privateKey: string }> {
         try {
+            console.log('🎯 WalletManager: Starting createWallet...', { networkType: this.networkType, hasPassword: !!password });
+            
             // Si es Shannon, usar la función directa de ShannonWallet (sin hooks)
             if (this.networkType === 'shannon') {
                 DEBUG_CONFIG.log("🔵 Usando ShannonWallet.createWalletDirect para crear wallet");
+                console.log('🎯 WalletManager: Using ShannonWallet.createWalletDirect...');
 
                 // Llamar a la función directa que no usa hooks
                 const result = await createWalletDirect(
@@ -241,25 +244,30 @@ export class WalletManager {
                 );
 
                 DEBUG_CONFIG.log("✅ Wallet creada exitosamente con ShannonWallet:", result.address);
+                console.log('🎯 WalletManager: ShannonWallet.createWalletDirect completed:', { address: result.address });
 
                 // Desencriptar para obtener el mnemónico
                 const walletInfo = await decryptWallet(result.serialized, password);
                 DEBUG_CONFIG.log("✅ Wallet desencriptada exitosamente");
+                console.log('🎯 WalletManager: Wallet decrypted successfully');
 
                 // Asignar la wallet al WalletManager para mantener compatibilidad
                 this.wallet = await DirectSecp256k1HdWallet.fromMnemonic(walletInfo.mnemonic, {
                     prefix: this.getCurrentNetwork().prefix
                 });
+                console.log('🎯 WalletManager: Wallet assigned to WalletManager');
 
                 // Re-inicializar cliente con signing client si no estamos en modo offline
                 if (!this.isForcedOffline) {
                     try {
                         await this.initializeClient();
+                        console.log('🎯 WalletManager: Client re-initialized');
                     } catch (error) {
                         console.warn("Could not initialize client after wallet creation:", error);
                     }
                 }
 
+                console.log('🎯 WalletManager: createWallet completed successfully');
                 return {
                     address: result.address,
                     serializedWallet: result.serialized,
@@ -530,6 +538,138 @@ export class WalletManager {
         );
 
         return result.transactionHash;
+    }
+
+    /**
+     * Signs an unsigned transaction with the user's wallet
+     * @param unsignedTx - The unsigned transaction data from the backend
+     * @returns {Promise<any>} The signed transaction
+     */
+    async signTransaction(unsignedTx: any): Promise<any> {
+        try {
+            DEBUG_CONFIG.log('[STAKE] Signing transaction:', unsignedTx);
+            DEBUG_CONFIG.log('[STAKE] Network type:', this.networkType);
+            DEBUG_CONFIG.log('[STAKE] Has wallet:', !!this.wallet);
+            DEBUG_CONFIG.log('[STAKE] Has shannonWallet:', !!this.shannonWallet);
+            
+            // For Shannon network, use the ShannonWallet for signing
+            if (this.networkType === 'shannon') {
+                if (!this.shannonWallet) {
+                    throw new Error('ShannonWallet not initialized');
+                }
+                
+                DEBUG_CONFIG.log('[STAKE] Using ShannonWallet for signing');
+                // Ensure ShannonWallet has its wallet loaded
+                try {
+                    // Try to sign first, if it fails due to wallet not loaded, catch and load it
+                    return await this.shannonWallet.signTransaction(unsignedTx);
+                } catch (signError: any) {
+                    if (signError.message && signError.message.includes('Wallet not initialized')) {
+                        DEBUG_CONFIG.log('[STAKE] ShannonWallet wallet not loaded, attempting to load from storage...');
+                        // Try to load the wallet from storage
+                        const { storageService } = await import('./storage.service');
+                        const storedWallet = await storageService.get<any>('shannon_wallet');
+                        if (storedWallet && storedWallet.serialized) {
+                            await this.shannonWallet.importWallet(storedWallet.serialized);
+                            DEBUG_CONFIG.log('[STAKE] Successfully loaded ShannonWallet from storage, retrying sign...');
+                            return await this.shannonWallet.signTransaction(unsignedTx);
+                        } else {
+                            throw new Error('No Shannon wallet found in storage');
+                        }
+                    } else {
+                        throw signError;
+                    }
+                }
+            }
+
+            // For Morse network or fallback, use the standard wallet
+            if (!this.wallet) {
+                throw new Error('Wallet not initialized');
+            }
+
+            if (!this.signingClient) {
+                const currentNetwork = this.getCurrentNetwork();
+                this.signingClient = await SigningStargateClient.connectWithSigner(
+                    currentNetwork.rpcUrls[0],
+                    this.wallet
+                );
+            }
+
+            // Extract transaction details from the backend response
+            const messages = unsignedTx.messages || [];
+            const fee = unsignedTx.fee || {
+                amount: [{ denom: 'upokt', amount: '10000' }],
+                gas: '200000'
+            };
+            const memo = unsignedTx.memo || '';
+
+            DEBUG_CONFIG.log('[STAKE] Extracted transaction details for Morse:', {
+                messagesCount: messages.length,
+                fee,
+                memo
+            });
+
+            // Validate that we have messages
+            if (!messages || messages.length === 0) {
+                throw new Error('Transaction must contain at least one message');
+            }
+
+            // Get the account for signing
+            const [account] = await this.wallet!.getAccounts();
+            if (!account) {
+                throw new Error('No se pudo obtener la cuenta');
+            }
+
+            // Use the signing client to properly sign the transaction
+            DEBUG_CONFIG.log('[STAKE] Signing transaction with Morse signing client...');
+            
+            const signedTx = await this.signingClient.sign(
+                account.address,
+                messages,
+                fee,
+                memo
+            );
+
+            DEBUG_CONFIG.log('[STAKE] Morse transaction signed successfully:', {
+                hasSignatures: !!signedTx.signatures,
+                signaturesLength: signedTx.signatures?.length || 0,
+                hasBodyBytes: !!signedTx.bodyBytes,
+                hasAuthInfoBytes: !!signedTx.authInfoBytes
+            });
+
+            return signedTx;
+        } catch (error) {
+            DEBUG_CONFIG.error('[STAKE] Error signing transaction:', error);
+            throw new Error(`Failed to sign transaction: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Broadcasts a signed transaction to the network
+     * @param signedTx - The signed transaction to broadcast
+     * @returns {Promise<any>} The broadcast result
+     */
+    async broadcastTransaction(signedTx: any): Promise<any> {
+        try {
+            DEBUG_CONFIG.log('[STAKE] Broadcasting transaction:', signedTx);
+            
+            if (!this.client) {
+                throw new Error('Client not initialized');
+            }
+
+            // For Shannon network, use the ShannonWallet for broadcasting
+            if (this.networkType === 'shannon' && this.shannonWallet) {
+                return await this.shannonWallet.broadcastTransaction(signedTx);
+            }
+
+            // For Morse network or fallback, use the standard client
+            const result = await this.client.broadcastTx(signedTx);
+            DEBUG_CONFIG.log('[STAKE] Transaction broadcast successfully:', result);
+            return result;
+        } catch (error) {
+            DEBUG_CONFIG.error('[STAKE] Error broadcasting transaction:', error);
+            throw new Error(`Failed to broadcast transaction: ${error instanceof Error ? error.message : String(error)}`);
+        }
     }
 
     /**

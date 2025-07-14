@@ -231,6 +231,14 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             // Limpiar el input
             setMorseInput('');
             setMorseError('');
+            
+            // Notify other components that wallets have been updated
+            window.dispatchEvent(new CustomEvent('wallets_updated', {
+                detail: { 
+                    type: 'morse_wallet_imported',
+                    network: 'morse'
+                }
+            }));
 
         } catch (error: any) {
             console.error('❌ Error importando Morse wallet:', error);
@@ -328,6 +336,15 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             // Reset
             setShannonInput('');
             console.log("Shannon Wallet imported successfully via main.tsx");
+            
+            // Notify other components that wallets have been updated
+            window.dispatchEvent(new CustomEvent('wallets_updated', {
+                detail: { 
+                    type: 'shannon_wallet_imported',
+                    address: importResult?.address,
+                    network: 'shannon'
+                }
+            }));
         } catch (error: any) {
             console.error('Error importing Shannon wallet:', error);
             setError(error.message || 'Error importing Shannon wallet');
@@ -345,16 +362,33 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
         try {
             setLoading(true);
+            console.log('🎯 IndividualImport: Starting wallet creation...');
 
             // ESTABLECER isMainnet como TRUE antes de crear la wallet
             await storageService.set('isMainnet', true);
             console.log('🎯 IndividualImport: Estableciendo isMainnet=true por defecto al crear wallet');
 
             // Call onCreateWallet from main.tsx instead of using the direct hook
-            await onCreateWallet(password, 'shannon');
+            console.log('🎯 IndividualImport: Calling onCreateWallet...');
+            const result = await onCreateWallet(password, 'shannon');
+            console.log('🎯 IndividualImport: onCreateWallet result:', result);
             console.log("Shannon Wallet created successfully via main.tsx");
+            
+            // Notify other components that wallets have been updated
+            window.dispatchEvent(new CustomEvent('wallets_updated', {
+                detail: { 
+                    type: 'shannon_wallet_created',
+                    address: result?.address,
+                    network: 'shannon'
+                }
+            }));
         } catch (error: any) {
             console.error('Error creating Shannon wallet:', error);
+            console.error('Error details:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
             setError(error.message || 'Error creating Shannon wallet');
         } finally {
             setLoading(false);
@@ -554,6 +588,14 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                                                 const updated = morseWalletList.filter(x => x.id !== w.id);
                                                                 setMorseWalletList(updated);
                                                                 await storageService.set('morse_wallets', updated);
+                                                                
+                                                                // Notify other components that wallets have been updated
+                                                                window.dispatchEvent(new CustomEvent('wallets_updated', {
+                                                                    detail: { 
+                                                                        type: 'morse_wallet_deleted',
+                                                                        network: 'morse'
+                                                                    }
+                                                                }));
                                                             }}>
                                                                 <i className="fas fa-trash"></i>
                                                             </button>
@@ -738,6 +780,14 @@ PrivateKey1
                                                                 const updated = shannonWalletList.filter(x => x.id !== w.id);
                                                                 setShannonWalletList(updated);
                                                                 await storageService.set('shannon_wallets', updated);
+                                                                
+                                                                // Notify other components that wallets have been updated
+                                                                window.dispatchEvent(new CustomEvent('wallets_updated', {
+                                                                    detail: { 
+                                                                        type: 'shannon_wallet_deleted',
+                                                                        network: 'shannon'
+                                                                    }
+                                                                }));
                                                             }}>
                                                                 <i className="fas fa-trash"></i>
                                                             </button>

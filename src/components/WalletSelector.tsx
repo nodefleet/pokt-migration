@@ -51,10 +51,18 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
             loadAvailableWallets();
         };
 
+        // Listener para actualizaciones de wallets (creación/importación)
+        const handleWalletsUpdated = (event: CustomEvent) => {
+            DEBUG_CONFIG.log('WalletSelector: Wallets actualizados, recargando wallets:', event.detail);
+            loadAvailableWallets();
+        };
+
         window.addEventListener('storage_updated', handleStorageUpdate);
+        window.addEventListener('wallets_updated', handleWalletsUpdated as EventListener);
 
         return () => {
             window.removeEventListener('storage_updated', handleStorageUpdate);
+            window.removeEventListener('wallets_updated', handleWalletsUpdated as EventListener);
         };
     }, []); // SIN DEPENDENCIAS para que solo se ejecute una vez
 

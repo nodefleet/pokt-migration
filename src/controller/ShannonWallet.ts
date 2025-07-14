@@ -375,26 +375,34 @@ export async function updateWalletsWithMnemonic(password: string = "CREA"): Prom
 // Función directa para crear wallet (sin hooks) que puede ser llamada desde cualquier lugar
 export async function createWalletDirect(password: string, isMainnet: boolean = false): Promise<{ address: string; serialized: string; isMainnet: boolean }> {
     DEBUG_CONFIG.log("Creating new Shannon wallet directly (no hooks)...");
+    console.log('🎯 ShannonWallet: Starting createWalletDirect...', { isMainnet, hasPassword: !!password });
+    
     try {
         const prefix = isMainnet === true ? NETWORKS.SHANNON.MAINNET.prefix : NETWORKS.SHANNON.TESTNET.prefix;
         DEBUG_CONFIG.log(`Using prefix: ${prefix} (${isMainnet === true ? 'mainnet' : 'testnet'})`);
+        console.log('🎯 ShannonWallet: Using prefix:', prefix);
 
         const wallet = await DirectSecp256k1HdWallet.generate(24, {
             prefix: prefix
         });
         DEBUG_CONFIG.log("Wallet generated successfully with prefix:", prefix);
+        console.log('🎯 ShannonWallet: Wallet generated successfully');
 
         const serializedWallet = await wallet.serialize(password);
         DEBUG_CONFIG.log("Wallet serialized successfully");
+        console.log('🎯 ShannonWallet: Wallet serialized successfully');
 
         const address = await getAddress(wallet);
         DEBUG_CONFIG.log("Address obtained:", address);
+        console.log('🎯 ShannonWallet: Address obtained:', address);
 
         // USAR EXPLÍCITAMENTE LA FUNCIÓN decryptWallet PARA OBTENER EL MNEMÓNICO
         DEBUG_CONFIG.log("🔑 Usando decryptWallet para obtener el mnemónico...");
+        console.log('🎯 ShannonWallet: Decrypting wallet to get mnemonic...');
         const walletInfo = await decryptWallet(serializedWallet, password);
         const mnemonic = walletInfo.mnemonic;
         DEBUG_CONFIG.log("✅ Mnemónico obtenido correctamente usando decryptWallet");
+        console.log('🎯 ShannonWallet: Mnemonic obtained successfully');
 
         // Timestamp para el ID y otros campos
         const timestamp = Date.now();
@@ -413,6 +421,7 @@ export async function createWalletDirect(password: string, isMainnet: boolean = 
         const existingWallets = await storageService.get<Array<any>>('shannon_wallets') || [];
         await storageService.set('shannon_wallets', [...existingWallets, walletObj]);
         DEBUG_CONFIG.log("Wallet saved in shannon_wallets array with mnemonic and privateKey");
+        console.log('🎯 ShannonWallet: Wallet saved in shannon_wallets array');
 
         // Guardar también como objeto individual en shannon_wallet
         await storageService.set('shannon_wallet', {
@@ -423,10 +432,18 @@ export async function createWalletDirect(password: string, isMainnet: boolean = 
             mnemonic: mnemonic
         });
         DEBUG_CONFIG.log("Wallet saved in shannon_wallet with mnemonic and privateKey");
+        console.log('🎯 ShannonWallet: Wallet saved in shannon_wallet');
 
+        console.log('🎯 ShannonWallet: createWalletDirect completed successfully');
         return { address, serialized: serializedWallet, isMainnet };
     } catch (error) {
         DEBUG_CONFIG.error("Error creating wallet directly:", error);
+        console.error('🎯 ShannonWallet: Error in createWalletDirect:', error);
+        console.error('🎯 ShannonWallet: Error details:', {
+            message: error instanceof Error ? error.message : 'Unknown error',
+            stack: error instanceof Error ? error.stack : 'No stack trace',
+            name: error instanceof Error ? error.name : 'Unknown error type'
+        });
         throw error;
     }
 }
@@ -723,5 +740,233 @@ export class ShannonWallet {
 
         const result = await signingClient.signAndBroadcast(account.address, [msg], fee);
         return result.transactionHash;
+    }
+
+    /**
+     * Signs an unsigned transaction with the user's wallet
+     * @param unsignedTx - The unsigned transaction data from the backend
+     * @returns {Promise<any>} The signed transaction
+     */
+    async signTransaction(unsignedTx: any): Promise<any> {
+        try {
+            DEBUG_CONFIG.log('[STAKE] ShannonWallet signing transaction:', unsignedTx);
+            DEBUG_CONFIG.log('[STAKE] ShannonWallet has wallet:', !!this.wallet);
+            DEBUG_CONFIG.log('[STAKE] ShannonWallet network mode:', this.networkMode);
+            DEBUG_CONFIG.log('[STAKE] ShannonWallet last successful RPC URL:', this.lastSuccessfulRpcUrl);
+            
+            if (!this.wallet) {
+                DEBUG_CONFIG.log('[STAKE] ShannonWallet wallet is null, attempting to load from storage...');
+                
+                // Try to load wallet from storage
+                const storedWallet = await storageService.get<any>('shannon_wallet');
+                DEBUG_CONFIG.log('[STAKE] Stored wallet from storage:', storedWallet);
+                
+                if (storedWallet && storedWallet.serialized) {
+                    DEBUG_CONFIG.log('[STAKE] Found stored wallet, importing...');
+                    await this.importWallet(storedWallet.serialized);
+                    DEBUG_CONFIG.log('[STAKE] Wallet imported successfully, wallet now exists:', !!this.wallet);
+                } else {
+                    throw new Error('No Shannon wallet found in storage');
+                }
+            }
+
+            if (!this.lastSuccessfulRpcUrl) {
+                DEBUG_CONFIG.log('[STAKE] No RPC URL available, attempting to initialize client...');
+                await this.initializeClient();
+                DEBUG_CONFIG.log('[STAKE] Client initialized, RPC URL:', this.lastSuccessfulRpcUrl);
+            }
+
+            const [account] = await this.wallet!.getAccounts();
+            if (!account) {
+                throw new Error('No se pudo obtener la cuenta');
+            }
+
+            DEBUG_CONFIG.log('[STAKE] Got account:', account.address);
+
+            const signingClient = await SigningStargateClient.connectWithSigner(
+                this.lastSuccessfulRpcUrl!,
+                this.wallet!
+            );
+
+            // Register custom POKT message types if needed
+            // Note: CosmJS will handle unknown message types by treating them as Any
+            DEBUG_CONFIG.log('[STAKE] Signing client created, checking message types...');
+            
+            // For Pocket Network, we need to handle custom message types
+            // The signing client should be able to handle unknown message types as Any
+            DEBUG_CONFIG.log('[STAKE] Pocket Network detected, will handle custom message types as Any');
+
+            // Log the exact format of unsignedTx to understand what we're working with
+            DEBUG_CONFIG.log('[STAKE] Unsigned transaction structure:', {
+                type: typeof unsignedTx,
+                keys: unsignedTx ? Object.keys(unsignedTx) : 'null',
+                fullData: JSON.stringify(unsignedTx, null, 2)
+            });
+
+            // Check if unsignedTx has the expected structure for a stake transaction
+            if (!unsignedTx) {
+                throw new Error('Invalid unsigned transaction format: transaction is null or undefined');
+            }
+
+            // Handle different transaction formats
+            let messages = [];
+            let fee = {
+                amount: [{ denom: 'upokt', amount: '10000' }],
+                gas: '200000'
+            };
+            let memo = '';
+            let timeoutHeight = '0';
+
+            if (typeof unsignedTx === 'object') {
+                // Extract transaction details from the backend response
+                messages = unsignedTx.messages || [];
+                fee = unsignedTx.fee || fee;
+                memo = unsignedTx.memo || '';
+                timeoutHeight = unsignedTx.timeoutHeight || '0';
+
+                // If no messages array, check if the transaction itself might be a message
+                if (messages.length === 0 && unsignedTx.typeUrl) {
+                    DEBUG_CONFIG.log('[STAKE] No messages array found, but transaction has typeUrl, treating as single message');
+                    messages = [unsignedTx];
+                }
+            } else {
+                // If it's not an object, it might be a direct message
+                DEBUG_CONFIG.log('[STAKE] Transaction is not an object, treating as direct message');
+                messages = [unsignedTx];
+            }
+
+            DEBUG_CONFIG.log('[STAKE] Extracted transaction details:', {
+                messagesCount: messages.length,
+                fee,
+                memo,
+                timeoutHeight,
+                messageTypes: messages.map((msg: any, i: number) => ({
+                    index: i,
+                    type: typeof msg,
+                    typeUrl: msg?.typeUrl || 'N/A',
+                    hasValue: !!msg?.value,
+                    valueKeys: msg?.value ? Object.keys(msg.value) : []
+                }))
+            });
+
+            // Validate that we have messages with proper structure
+            if (!messages || messages.length === 0) {
+                throw new Error('No messages found in transaction. The backend should provide unsigned transactions with proper message structure.');
+            }
+
+            // Validate each message has required fields
+            for (let i = 0; i < messages.length; i++) {
+                const msg = messages[i];
+                if (!msg || typeof msg !== 'object') {
+                    throw new Error(`Message ${i} is not a valid object: ${typeof msg}`);
+                }
+                if (!msg.typeUrl) {
+                    throw new Error(`Message ${i} is missing typeUrl. Message structure: ${JSON.stringify(msg, null, 2)}`);
+                }
+                if (!msg.value) {
+                    throw new Error(`Message ${i} is missing value. Message structure: ${JSON.stringify(msg, null, 2)}`);
+                }
+                DEBUG_CONFIG.log(`[STAKE] Message ${i} is valid:`, {
+                    typeUrl: msg.typeUrl,
+                    valueKeys: Object.keys(msg.value)
+                });
+            }
+
+            DEBUG_CONFIG.log('[STAKE] All messages validated successfully');
+
+            // Use the signing client to properly sign the transaction
+            DEBUG_CONFIG.log('[STAKE] Signing transaction with signing client...');
+            
+            try {
+                const signedTx = await signingClient.sign(
+                    account.address,
+                    messages,
+                    fee,
+                    memo
+                );
+
+                DEBUG_CONFIG.log('[STAKE] Transaction signed successfully:', {
+                    hasSignatures: !!signedTx.signatures,
+                    signaturesLength: signedTx.signatures?.length || 0,
+                    hasBodyBytes: !!signedTx.bodyBytes,
+                    hasAuthInfoBytes: !!signedTx.authInfoBytes
+                });
+
+                return signedTx;
+            } catch (signError: any) {
+                DEBUG_CONFIG.error('[STAKE] Error during signing:', signError);
+                
+                // Check if it's an unknown message type error
+                if (signError.message && signError.message.includes('Unregistered type url')) {
+                    const messageTypes = messages.map((msg: any) => msg.typeUrl).join(', ');
+                    throw new Error(`Unknown message type(s): ${messageTypes}. The POKT staking message types may not be registered with CosmJS. Please check the backend for the correct message structure.`);
+                }
+                
+                throw signError;
+            }
+        } catch (error) {
+            DEBUG_CONFIG.error('[STAKE] ShannonWallet error signing transaction:', error);
+            throw new Error(`Failed to sign transaction: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Broadcasts a signed transaction to the Shannon network
+     * @param signedTx - The signed transaction to broadcast (TxRaw format)
+     * @returns {Promise<any>} The broadcast result
+     */
+    async broadcastTransaction(signedTx: any): Promise<any> {
+        try {
+            DEBUG_CONFIG.log('[STAKE] ShannonWallet broadcasting transaction:', signedTx);
+            
+            if (!this.client) {
+                throw new Error('Client not initialized');
+            }
+
+            // The signedTx should be in TxRaw format (bodyBytes, authInfoBytes, signatures)
+            if (!signedTx.bodyBytes || !signedTx.authInfoBytes || !signedTx.signatures) {
+                throw new Error('Invalid signed transaction format. Expected TxRaw format with bodyBytes, authInfoBytes, and signatures.');
+            }
+
+            // Log the raw bytes for debugging
+            DEBUG_CONFIG.log('[STAKE] Transaction bytes:', {
+                bodyBytesLength: signedTx.bodyBytes.length,
+                authInfoBytesLength: signedTx.authInfoBytes.length,
+                signaturesLength: signedTx.signatures.length
+            });
+
+            // Broadcast the signed transaction using the raw bytes
+            const result = await this.client.broadcastTxSync(signedTx);
+            DEBUG_CONFIG.log('[STAKE] ShannonWallet transaction broadcast successfully:', result);
+            return result;
+        } catch (error) {
+            DEBUG_CONFIG.error('[STAKE] ShannonWallet error broadcasting transaction:', error);
+            throw new Error(`Failed to broadcast transaction: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    }
+
+    /**
+     * Checks if the wallet is loaded and accessible
+     * @returns {boolean} True if wallet is loaded
+     */
+    isWalletLoaded(): boolean {
+        return !!this.wallet;
+    }
+
+    /**
+     * Gets the wallet address if loaded
+     * @returns {Promise<string | null>} The wallet address or null if not loaded
+     */
+    async getWalletAddress(): Promise<string | null> {
+        try {
+            if (!this.wallet) {
+                return null;
+            }
+            const [account] = await this.wallet.getAccounts();
+            return account ? account.address : null;
+        } catch (error) {
+            DEBUG_CONFIG.error('[STAKE] Error getting wallet address:', error);
+            return null;
+        }
     }
 } 

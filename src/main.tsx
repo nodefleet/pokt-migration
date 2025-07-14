@@ -329,12 +329,18 @@ const App: React.FC = () => {
 
     const handleCreateWallet = async (password: string, network?: NetworkType) => {
         try {
+            console.log('🎯 main.tsx: Starting wallet creation...', { password: password ? '***' : 'empty', network });
+            
             if (!walletService.getWalletManager()) {
+                console.log('🎯 main.tsx: WalletManager not initialized, initializing...');
                 await walletService.init();
+                console.log('🎯 main.tsx: WalletManager initialized successfully');
             }
 
             // Usar el método createWallet del walletService
+            console.log('🎯 main.tsx: Calling walletService.createWallet...', { network: network || 'shannon', isMainnet: false });
             const walletInfo = await walletService.createWallet(password, network || 'shannon', false);
+            console.log('🎯 main.tsx: Wallet created successfully:', { address: walletInfo.address, network: walletInfo.network, isMainnet: walletInfo.isMainnet });
 
             setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
             setNetworkType(walletInfo.network);
@@ -347,10 +353,26 @@ const App: React.FC = () => {
             DEBUG_CONFIG.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
             await loadWalletData(walletInfo.address);
 
+            console.log('🎯 main.tsx: Navigating to /wallet...');
             navigate('/wallet');
+            
+            // Notify other components that wallets have been updated
+            window.dispatchEvent(new CustomEvent('wallets_updated', {
+                detail: { 
+                    type: 'shannon_wallet_created',
+                    address: walletInfo.address,
+                    network: 'shannon'
+                }
+            }));
 
             return { address: walletInfo.address, network: walletInfo.network };
         } catch (error) {
+            console.error('🎯 main.tsx: Error creating wallet:', error);
+            console.error('🎯 main.tsx: Error details:', {
+                message: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : 'No stack trace',
+                name: error instanceof Error ? error.name : 'Unknown error type'
+            });
             DEBUG_CONFIG.error('Error creating wallet:', error);
             throw error;
         }

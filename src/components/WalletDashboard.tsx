@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { WalletDashboardProps } from '../types';
 import { Link, useNavigate } from 'react-router-dom';
 import { ERROR_MESSAGES, DEBUG_CONFIG } from '../controller/config';
+import { backendUrl } from '../controller/config';
 import { WalletManager, Transaction, NetworkType } from '../controller/WalletManager';
 import LoadingSpinner from './LoadingSpinner';
 import TransactionHistory from './TransactionHistory';
@@ -10,6 +11,7 @@ import { formatBalance, shortenAddress } from '../utils/utils';
 import { storageService } from '../controller/storage.service';
 import MigrationDialog from './MigrationDialog';
 import { morseWalletService } from '../controller/MorseWallet';
+import StakeDialog from './StakeDialog';
 
 interface StoredWallet {
     serialized: string;
@@ -23,7 +25,7 @@ const fetchShannonTransactions = async (address: string): Promise<any[]> => {
     try {
         DEBUG_CONFIG.log('🔍 Fetching Shannon transactions directly from RPC API...');
 
-        // URL de la API RPC de Shannon
+        // URL de la API RPC de Shannon - usar la URL correcta
         const rpcUrl = 'https://shannon-grove-rpc.mainnet.poktroll.com/';
 
         // Consulta para transacciones enviadas
@@ -42,6 +44,8 @@ const fetchShannonTransactions = async (address: string): Promise<any[]> => {
             params: [`transfer.recipient='${address}'`, true, '1', '100', 'desc']
         };
 
+        DEBUG_CONFIG.log('[STAKE] RPC queries:', { sendQuery, receiveQuery });
+
         // Realizar ambas consultas en paralelo
         const [sendResponse, receiveResponse] = await Promise.all([
             fetch(rpcUrl, {
@@ -59,6 +63,8 @@ const fetchShannonTransactions = async (address: string): Promise<any[]> => {
         // Procesar las respuestas
         const sendData = await sendResponse.json();
         const receiveData = await receiveResponse.json();
+
+        DEBUG_CONFIG.log('[STAKE] RPC responses:', { sendData, receiveData });
 
         // Extraer las transacciones
         const sentTxs = sendData.result?.txs || [];
@@ -100,6 +106,13 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const navigate = useNavigate();
     // NOTE: Do NOT call onLogout directly from parent or on button click. Only call from handleLogoutConfirm/modal.
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const [showStakeDialog, setShowStakeDialog] = useState(false);
+    const [stakeResult, setStakeResult] = useState<null | { success: boolean, message: string, fileUrl?: string, fileName?: string, sessionId?: string, details?: any, executeResult?: any, statusResult?: any, stakeFiles?: any[], mnemonicsData?: any, mnemonicsUrl?: string, mnemonicsFileName?: string }>(null);
+    const [executeLoading, setExecuteLoading] = useState(false);
+    const [executeError, setExecuteError] = useState<string | null>(null);
+    const [executeNetwork, setExecuteNetwork] = useState('main');
+    const [executePassphrase, setExecutePassphrase] = useState('');
+    const [autoRefreshInterval, setAutoRefreshInterval] = useState<NodeJS.Timeout | null>(null);
 
     const handleLogoutClick = () => {
         setShowLogoutConfirm(true);
@@ -154,6 +167,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 try {
                     // Primero intentar con el método normal
                     const fetchedTransactions = await walletManager.getTransactions(walletAddress);
+                    DEBUG_CONFIG.log('[STAKE] Normal method returned transactions:', fetchedTransactions.length);
 
                     // Si no hay transacciones y estamos en Shannon, intentar directamente con la API RPC
                     if (fetchedTransactions.length === 0 && network === 'shannon') {
@@ -161,11 +175,14 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                         const directTransactions = await fetchShannonTransactions(walletAddress);
                         if (directTransactions.length > 0) {
                             setTransactionsList(directTransactions);
+                            DEBUG_CONFIG.log('[STAKE] Direct RPC method found transactions:', directTransactions.length);
                         } else {
                             setTransactionsList(fetchedTransactions);
+                            DEBUG_CONFIG.log('[STAKE] No transactions found with either method');
                         }
                     } else {
                         setTransactionsList(fetchedTransactions);
+                        DEBUG_CONFIG.log('[STAKE] Using normal method transactions:', fetchedTransactions.length);
                     }
                 } catch (txError) {
                     DEBUG_CONFIG.error('Error obteniendo transacciones con el método normal:', txError);
@@ -173,14 +190,21 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                     // Si hay un error y estamos en Shannon, intentar directamente con la API RPC
                     if (network === 'shannon') {
                         DEBUG_CONFIG.log('Intentando obtener transacciones directamente con RPC debido a error...');
-                        const directTransactions = await fetchShannonTransactions(walletAddress);
-                        setTransactionsList(directTransactions);
+                        try {
+                            const directTransactions = await fetchShannonTransactions(walletAddress);
+                            setTransactionsList(directTransactions);
+                            DEBUG_CONFIG.log('[STAKE] Fallback RPC method found transactions:', directTransactions.length);
+                        } catch (directError) {
+                            DEBUG_CONFIG.error('Error with direct RPC method:', directError);
+                            setTransactionsList([]);
+                        }
                     } else {
                         setTransactionsList([]);
                     }
                 }
             } else {
                 setTransactionsList([]);
+                DEBUG_CONFIG.log('[STAKE] Offline mode - no transactions loaded');
             }
         } catch (error) {
             DEBUG_CONFIG.error('Error al obtener datos de la wallet:', error);
@@ -189,6 +213,35 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             setLoading(false);
         }
     }, [walletManager, walletAddress, network, isMainnet]);
+
+    // Function to fetch only the balance
+    const fetchBalanceOnly = useCallback(async () => {
+        try {
+            if (!walletAddress) return;
+            if (!walletManager) return;
+            setLoading(true);
+            const fetchedBalance = await walletManager.getBalance(walletAddress);
+            setFormattedBalanceValue(formatBalance(fetchedBalance, isMainnet));
+            window.dispatchEvent(new CustomEvent('wallet_balance_updated', {
+                detail: { address: walletAddress, balance: fetchedBalance }
+            }));
+        } catch (error) {
+            DEBUG_CONFIG.error('Error fetching balance only:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, [walletManager, walletAddress, isMainnet]);
+
+    // Auto-refresh balance every 30 seconds
+    useEffect(() => {
+        if (!walletAddress || !walletManager) return;
+        if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+        const interval = setInterval(() => {
+            fetchBalanceOnly();
+        }, 30000); // 30 seconds
+        setAutoRefreshInterval(interval);
+        return () => clearInterval(interval);
+    }, [walletAddress, walletManager, fetchBalanceOnly]);
 
     // Actualizar cuando cambian las props
     useEffect(() => {
@@ -392,6 +445,278 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         setMorsePrivateKey(null);
     };
 
+    // Method to generate transactions from stake file content
+    const generateTransactionsFromFileContent = async (
+        stakeFileContent: any,
+        ownerAddress: string,
+        network: string
+    ): Promise<any[]> => {
+        try {
+            DEBUG_CONFIG.log('[STAKE] Generating transactions from stake file content:', {
+                stakeFileContent,
+                ownerAddress,
+                network,
+                contentType: typeof stakeFileContent,
+                isArray: Array.isArray(stakeFileContent),
+                keys: stakeFileContent && typeof stakeFileContent === 'object' ? Object.keys(stakeFileContent) : 'N/A'
+            });
+
+            if (!stakeFileContent) {
+                throw new Error('No stake file content provided');
+            }
+
+            // Handle different formats of stake file content
+            let transactions: any[] = [];
+
+            if (Array.isArray(stakeFileContent)) {
+                DEBUG_CONFIG.log('[STAKE] Stake file content is an array, processing each item as a stake file');
+                // Each item in the array is a separate stake file
+                for (let i = 0; i < stakeFileContent.length; i++) {
+                    const stakeFile = stakeFileContent[i];
+                    DEBUG_CONFIG.log(`[STAKE] Processing stake file ${i + 1}/${stakeFileContent.length}:`, stakeFile);
+                    
+                    const transaction = await generateTransactionFromStakeFile(stakeFile, ownerAddress, network);
+                    transactions.push(transaction);
+                }
+            } else if (typeof stakeFileContent === 'object') {
+                DEBUG_CONFIG.log('[STAKE] Stake file content is a single object, processing as single stake file');
+                const transaction = await generateTransactionFromStakeFile(stakeFileContent, ownerAddress, network);
+                transactions.push(transaction);
+            } else if (typeof stakeFileContent === 'string') {
+                // Check if it's YAML content (starts with key-value pairs)
+                if (stakeFileContent.includes('stake_amount:') || stakeFileContent.includes('owner_address:')) {
+                    DEBUG_CONFIG.log('[STAKE] Stake file content is YAML, processing directly');
+                    const transaction = await generateTransactionFromStakeFile(stakeFileContent, ownerAddress, network);
+                    transactions.push(transaction);
+                } else {
+                    // Try to parse as JSON only if it doesn't look like YAML
+                    try {
+                        const parsed = JSON.parse(stakeFileContent);
+                        DEBUG_CONFIG.log('[STAKE] Parsed string content as JSON');
+                        if (Array.isArray(parsed)) {
+                            for (let i = 0; i < parsed.length; i++) {
+                                const transaction = await generateTransactionFromStakeFile(parsed[i], ownerAddress, network);
+                                transactions.push(transaction);
+                            }
+                        } else {
+                            const transaction = await generateTransactionFromStakeFile(parsed, ownerAddress, network);
+                            transactions.push(transaction);
+                        }
+                    } catch (parseError) {
+                        // If JSON parsing fails, treat as YAML
+                        DEBUG_CONFIG.log('[STAKE] JSON parsing failed, treating as YAML content');
+                        const transaction = await generateTransactionFromStakeFile(stakeFileContent, ownerAddress, network);
+                        transactions.push(transaction);
+                    }
+                }
+            } else {
+                throw new Error(`Unsupported stake file content type: ${typeof stakeFileContent}`);
+            }
+
+            DEBUG_CONFIG.log('[STAKE] Generated transactions:', {
+                count: transactions.length,
+                transactions: transactions.map((tx, i) => ({
+                    index: i,
+                    type: typeof tx,
+                    isObject: typeof tx === 'object',
+                    keys: tx && typeof tx === 'object' ? Object.keys(tx) : 'N/A',
+                    hasMessages: tx && typeof tx === 'object' && Array.isArray(tx.messages),
+                    messagesCount: tx && typeof tx === 'object' && Array.isArray(tx.messages) ? tx.messages.length : 0
+                }))
+            });
+
+            return transactions;
+        } catch (error) {
+            DEBUG_CONFIG.error('[STAKE] Error generating transactions from file content:', error);
+            throw new Error(`Failed to generate transactions from file content: ${error instanceof Error ? error.message : String(error)}`);
+        }
+    };
+
+    // Helper function to generate a single transaction from a stake file
+    const generateTransactionFromStakeFile = async (
+        stakeFile: any,
+        ownerAddress: string,
+        network: string
+    ): Promise<any> => {
+        DEBUG_CONFIG.log('[STAKE] Generating transaction from stake file:', {
+            stakeFile,
+            ownerAddress,
+            network
+        });
+
+        // If stakeFile is a string (YAML content), parse it
+        let stakeData = stakeFile;
+        if (typeof stakeFile === 'string') {
+            DEBUG_CONFIG.log('[STAKE] Stake file is YAML string, parsing...');
+            try {
+                // Simple YAML parsing for the stake file structure
+                stakeData = parseYamlStakeFile(stakeFile);
+                DEBUG_CONFIG.log('[STAKE] Parsed YAML stake data:', stakeData);
+            } catch (parseError) {
+                throw new Error(`Failed to parse YAML stake file: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+            }
+        }
+
+        // Extract stake information from the stake file
+        const stakeAmount = stakeData.stake_amount || stakeData.amount || "60005000000"; // 60,005 POKT in upokt
+        const services = stakeData.services || ["0001"];
+        const relayChain = stakeData.relay_chain || stakeData.relayChain || "0001";
+        const operatorAddress = stakeData.operator_address || stakeData.operatorAddress;
+
+        DEBUG_CONFIG.log('[STAKE] Extracted stake information:', {
+            stakeAmount,
+            services,
+            relayChain,
+            operatorAddress
+        });
+
+        // Create the proper POKT supplier staking message
+        // This follows the POKT network's expected message structure
+        const stakeMessage = {
+            typeUrl: "/pokt.supplier.MsgStakeSupplier",
+            value: {
+                address: operatorAddress || ownerAddress,
+                stake: {
+                    amount: stakeAmount,
+                    denom: "upokt"
+                },
+                services: services.map((service: any) => {
+                    if (typeof service === 'string') {
+                        return {
+                            service: service,
+                            endpoints: []
+                        };
+                    } else if (service.service_id) {
+                        return {
+                            service: service.service_id,
+                            endpoints: service.endpoints || []
+                        };
+                    } else {
+                        return {
+                            service: service,
+                            endpoints: []
+                        };
+                    }
+                })
+            }
+        };
+
+        // Create the transaction structure with proper POKT format
+        const transaction = {
+            messages: [stakeMessage],
+            fee: {
+                amount: [{ denom: 'upokt', amount: '200000' }],
+                gas: '200000'
+            },
+            memo: `Stake supplier transaction for ${services.join(',')} services`,
+            timeoutHeight: '0'
+        };
+
+        DEBUG_CONFIG.log('[STAKE] Generated POKT supplier staking transaction:', {
+            typeUrl: stakeMessage.typeUrl,
+            address: stakeMessage.value.address,
+            stakeAmount: stakeMessage.value.stake.amount,
+            services: stakeMessage.value.services,
+            fee: transaction.fee
+        });
+
+        return transaction;
+    };
+
+    // Helper function to parse YAML stake file content
+    const parseYamlStakeFile = (yamlContent: string): any => {
+        DEBUG_CONFIG.log('[STAKE] Parsing YAML content:', yamlContent.substring(0, 200) + '...');
+        
+        const result: any = {};
+        const lines = yamlContent.split('\n');
+        
+        for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine || trimmedLine.startsWith('#')) continue;
+            
+            // Handle simple key-value pairs
+            if (trimmedLine.includes(':')) {
+                const colonIndex = trimmedLine.indexOf(':');
+                const key = trimmedLine.substring(0, colonIndex).trim();
+                const value = trimmedLine.substring(colonIndex + 1).trim();
+                
+                if (key === 'stake_amount') {
+                    // Extract numeric value from "60005000000upokt"
+                    const numericValue = value.replace(/[^\d]/g, '');
+                    result.stake_amount = numericValue;
+                } else if (key === 'owner_address') {
+                    result.owner_address = value;
+                } else if (key === 'operator_address') {
+                    result.operator_address = value;
+                } else if (key === 'service_id') {
+                    // Handle services array
+                    if (!result.services) result.services = [];
+                    result.services.push(value);
+                } else if (key === 'services') {
+                    // Handle services array in different formats
+                    if (!result.services) result.services = [];
+                    if (value.startsWith('[') && value.endsWith(']')) {
+                        // Array format: [0001, 0002]
+                        const services = value.slice(1, -1).split(',').map(s => s.trim().replace(/"/g, ''));
+                        result.services.push(...services);
+                    } else {
+                        // Single service
+                        result.services.push(value);
+                    }
+                } else if (key === 'relay_chain' || key === 'relayChain') {
+                    result.relay_chain = value;
+                } else if (key === 'amount') {
+                    // Extract numeric value from amount field
+                    const numericValue = value.replace(/[^\d]/g, '');
+                    result.amount = numericValue;
+                }
+            }
+        }
+        
+        // Parse complex service structure from the YAML content
+        // Look for service blocks with service_id, endpoints, and rev_share_percent
+        const serviceBlocks = yamlContent.match(/-\s*service_id:\s*(\w+)[\s\S]*?(?=-\s*service_id:|$)/g);
+        if (serviceBlocks && serviceBlocks.length > 0) {
+            result.services = [];
+            for (const block of serviceBlocks) {
+                const serviceIdMatch = block.match(/service_id:\s*(\w+)/);
+                if (serviceIdMatch) {
+                    const serviceId = serviceIdMatch[1];
+                    const service: any = {
+                        service_id: serviceId,
+                        endpoints: [] as any[]
+                    };
+                    
+                    // Extract endpoints
+                    const endpointMatches = block.match(/publicly_exposed_url:\s*(.+)/g);
+                    if (endpointMatches) {
+                        for (const endpointMatch of endpointMatches) {
+                            const url = endpointMatch.replace('publicly_exposed_url:', '').trim();
+                            service.endpoints.push({
+                                publicly_exposed_url: url,
+                                rpc_type: 'json_rpc'
+                            });
+                        }
+                    }
+                    
+                    result.services.push(service);
+                }
+            }
+        }
+        
+        // Ensure we have default values for required fields
+        if (!result.services || result.services.length === 0) {
+            result.services = ['0001']; // Default service
+        }
+        
+        if (!result.stake_amount && !result.amount) {
+            result.stake_amount = '60005000000'; // Default stake amount (60,005 POKT)
+        }
+        
+        DEBUG_CONFIG.log('[STAKE] Parsed YAML result:', result);
+        return result;
+    };
+
     const containerVariants = {
         hidden: { opacity: 0 },
         visible: {
@@ -520,8 +845,31 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                         >
                             <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
                                 <div>
-                                    <h1 className="text-3xl font-bold mb-1">{formattedBalanceValue} <span className="text-blue-400">POKT</span></h1>
-                                    <p className="text-gray-400">{walletAddress}</p>
+                                    <h1 className="text-3xl font-bold mb-1 flex items-center gap-2">
+                                        {formattedBalanceValue} <span className="text-blue-400">POKT</span>
+                                        <button
+                                            className="ml-2 p-1 rounded-full bg-gray-800 hover:bg-gray-700 text-blue-300 hover:text-blue-400 transition"
+                                            title="Refresh Balance"
+                                            onClick={fetchBalanceOnly}
+                                            disabled={loading}
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12a7.5 7.5 0 0113.5-5.303M19.5 12a7.5 7.5 0 01-13.5 5.303M12 6v6l4 2" />
+                                            </svg>
+                                        </button>
+                                    </h1>
+                                    <p className="text-gray-400 flex items-center gap-2">
+                                        {walletAddress}
+                                        <a
+                                            href={`https://${!isMainnet ? 'beta.' : ''}poktscan.com/account/${walletAddress}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="ml-2 px-2 py-1 rounded bg-blue-900 hover:bg-blue-800 text-blue-300 hover:text-white text-xs font-semibold transition"
+                                            title="View on Poktscan Explorer"
+                                        >
+                                            View on Poktscan
+                                        </a>
+                                    </p>
                                 </div>
                             </div>
                         </motion.section>
@@ -555,6 +903,19 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                         </motion.button>
                                     );
                                 })}
+                                {/* Stake button for Shannon only */}
+                                {network === 'shannon' && (
+                                    <motion.button
+                                        className="p-6 bg-gradient-to-r from-red-600/80 to-pink-500/80 rounded-xl text-center transition-all duration-200 border border-red-500/50 hover:border-red-600/70 text-white font-semibold shadow-lg"
+                                        whileHover={{ scale: 1.02, y: -2 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        variants={itemVariants}
+                                        onClick={() => setShowStakeDialog(true)}
+                                    >
+                                        <span className="block text-3xl mb-3">🔥</span>
+                                        <span className="text-lg font-medium">Stake</span>
+                                    </motion.button>
+                                )}
                             </div>
                         </motion.section>
 
@@ -618,6 +979,682 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                     morsePrivateKey={morsePrivateKey}
                     morseAddress={walletAddress}
                 />
+            )}
+            {/* Stake Dialog */}
+            {showStakeDialog && network === 'shannon' && (
+                <StakeDialog
+                    balance={parseFloat(balance) / 1_000_000}
+                    onClose={() => setShowStakeDialog(false)}
+                    onStake={async (nodes) => {
+                        setShowStakeDialog(false);
+                        DEBUG_CONFIG.log('[STAKE] Initiating stake API call', {
+                            backendUrl,
+                            ownerAddress: walletAddress,
+                            numberOfNodes: nodes
+                        });
+                        DEBUG_CONFIG.log('[STAKE] Stake nodes request payload:', {
+                            url: `${backendUrl}/api/stake/create`,
+                            payload: {
+                                ownerAddress: walletAddress,
+                                numberOfNodes: nodes
+                            }
+                        });
+                        let mnemonicsUrl: string | undefined = undefined;
+                        let mnemonicsFileName: string | undefined = undefined;
+                        try {
+                            const response = await fetch(`${backendUrl}/api/stake/create`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    ownerAddress: walletAddress,
+                                    numberOfNodes: nodes
+                                }),
+                            });
+                            DEBUG_CONFIG.log('[STAKE] API response status:', response.status);
+                            DEBUG_CONFIG.log('[STAKE] API response headers:', Object.fromEntries(response.headers.entries()));
+                            
+                            let fileUrl, fileName, sessionId, details;
+                            if (response.ok) {
+                                const contentType = response.headers.get('content-type');
+                                DEBUG_CONFIG.log('[STAKE] Content-Type:', contentType);
+                                
+                                // First, try to get the raw response text to see what we're actually getting
+                                const responseText = await response.text();
+                                DEBUG_CONFIG.log('[STAKE] Raw response text (first 500 chars):', responseText.substring(0, 500));
+                                
+                                // Try to parse as JSON regardless of content-type
+                                let jsonResponse = null;
+                                try {
+                                    jsonResponse = JSON.parse(responseText);
+                                    DEBUG_CONFIG.log('[STAKE] Successfully parsed as JSON:', jsonResponse);
+                                } catch (parseError) {
+                                    DEBUG_CONFIG.log('[STAKE] Could not parse as JSON:', parseError);
+                                }
+                                
+                                if (contentType && contentType.includes('application/zip')) {
+                                    // Handle ZIP file response
+                                    const blob = new Blob([responseText], { type: 'application/zip' });
+                                    fileName = `stake_files_${Date.now()}.zip`;
+                                    fileUrl = URL.createObjectURL(blob);
+                                    
+                                    // Try to get sessionId from multiple sources
+                                    const responseSessionId = response.headers.get('x-session-id') || 
+                                                             response.headers.get('session-id') ||
+                                                             response.headers.get('x-stake-session-id') ||
+                                                             (jsonResponse && jsonResponse.sessionId) ||
+                                                             (jsonResponse && jsonResponse.data && jsonResponse.data.sessionId);
+                                    
+                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from headers:', response.headers.get('x-session-id'));
+                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from session-id header:', response.headers.get('session-id'));
+                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from x-stake-session-id header:', response.headers.get('x-stake-session-id'));
+                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from JSON response:', jsonResponse && jsonResponse.sessionId);
+                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from JSON response.data:', jsonResponse && jsonResponse.data && jsonResponse.data.sessionId);
+                                    DEBUG_CONFIG.log('[STAKE] ZIP response - Final sessionId:', responseSessionId);
+                                    
+                                    setStakeResult({ 
+                                        success: true, 
+                                        message: `Successfully created ${nodes} stake file(s)!`, 
+                                        fileUrl, 
+                                        fileName,
+                                        sessionId: responseSessionId || undefined,
+                                        details: jsonResponse && jsonResponse.details
+                                    });
+                                } else {
+                                    // Handle JSON response
+                                    if (jsonResponse) {
+                                        DEBUG_CONFIG.log('[STAKE] JSON API response body:', jsonResponse);
+                                        
+                                        // Try multiple possible locations for sessionId
+                                        sessionId = jsonResponse.sessionId || 
+                                                   jsonResponse.data?.sessionId ||
+                                                   jsonResponse.result?.sessionId ||
+                                                   jsonResponse.response?.sessionId;
+                                        
+                                        details = jsonResponse.details || 
+                                                 jsonResponse.data?.details ||
+                                                 jsonResponse.result?.details;
+                                        
+                                        DEBUG_CONFIG.log('[STAKE] Extracted sessionId:', sessionId);
+                                        DEBUG_CONFIG.log('[STAKE] Extracted details:', details);
+                                        DEBUG_CONFIG.log('[STAKE] All possible sessionId locations:', {
+                                            'jsonResponse.sessionId': jsonResponse.sessionId,
+                                            'jsonResponse.data?.sessionId': jsonResponse.data?.sessionId,
+                                            'jsonResponse.result?.sessionId': jsonResponse.result?.sessionId,
+                                            'jsonResponse.response?.sessionId': jsonResponse.response?.sessionId
+                                        });
+                                        
+                                        if (jsonResponse.fileBase64 && jsonResponse.fileName) {
+                                            const link = document.createElement('a');
+                                            link.href = `data:application/zip;base64,${jsonResponse.fileBase64}`;
+                                            link.download = jsonResponse.fileName;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                            // If mnemonicsData is present, trigger immediate download
+                                            if (jsonResponse.mnemonicsData) {
+                                                const mnemonicsJson = JSON.stringify(jsonResponse.mnemonicsData, null, 2);
+                                                const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
+                                                mnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                                mnemonicsFileName = `wallet_mnemonics_${jsonResponse.mnemonicsData.sessionId || sessionId || Date.now()}.json`;
+                                                // Auto-download
+                                                const mnemonicsLink = document.createElement('a');
+                                                mnemonicsLink.href = mnemonicsUrl;
+                                                mnemonicsLink.download = mnemonicsFileName;
+                                                document.body.appendChild(mnemonicsLink);
+                                                mnemonicsLink.click();
+                                                document.body.removeChild(mnemonicsLink);
+                                            }
+                                            setStakeResult({ 
+                                                success: true, 
+                                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
+                                                fileUrl, 
+                                                fileName, 
+                                                sessionId, 
+                                                details, 
+                                                stakeFiles: jsonResponse.stakeFiles || [],
+                                                mnemonicsData: jsonResponse.mnemonicsData,
+                                                mnemonicsUrl,
+                                                mnemonicsFileName
+                                            });
+                                        } else if (jsonResponse.fileUrl && jsonResponse.fileName) {
+                                            setStakeResult({ 
+                                                success: true, 
+                                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
+                                                fileUrl: jsonResponse.fileUrl, 
+                                                fileName: jsonResponse.fileName, 
+                                                sessionId, 
+                                                details, 
+                                                stakeFiles: jsonResponse.stakeFiles || [],
+                                                mnemonicsData: jsonResponse.mnemonicsData,
+                                                mnemonicsUrl: jsonResponse.mnemonicsUrl,
+                                                mnemonicsFileName: jsonResponse.mnemonicsFileName
+                                            });
+                                        } else {
+                                            setStakeResult({ 
+                                                success: true, 
+                                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
+                                                sessionId, 
+                                                details, 
+                                                stakeFiles: jsonResponse.stakeFiles || [],
+                                                mnemonicsData: jsonResponse.mnemonicsData,
+                                                mnemonicsUrl: jsonResponse.mnemonicsUrl,
+                                                mnemonicsFileName: jsonResponse.mnemonicsFileName
+                                            });
+                                        }
+                                    } else {
+                                        DEBUG_CONFIG.log('[STAKE] No JSON response and not ZIP - unexpected response type');
+                                        setStakeResult({ 
+                                            success: false, 
+                                            message: 'Unexpected response format from server' 
+                                        });
+                                    }
+                                }
+                            } else {
+                                const result = await response.json().catch(() => ({}));
+                                DEBUG_CONFIG.log('[STAKE] Error response:', result);
+                                setStakeResult({ success: false, message: result.error || 'Failed to create stake files' });
+                            }
+                        } catch (error: any) {
+                            DEBUG_CONFIG.error('[STAKE] Network error:', error);
+                            setStakeResult({ success: false, message: 'Network error: ' + (error.message || error) });
+                        }
+                    }}
+                />
+            )}
+            {/* Stake Result Modal */}
+            {stakeResult && (
+                <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+                    <div className="bg-gray-900 rounded-xl p-8 border-2 border-gray-700 shadow-xl max-w-2xl w-full text-center max-h-[90vh] overflow-y-auto">
+                        <h2 className={`text-2xl font-bold mb-4 ${stakeResult.success ? 'text-green-400' : 'text-red-400'}`}>{stakeResult.success ? '' : 'Stake Failed'}</h2>
+                        {/* Only show the generated message and download button if success */}
+                        {stakeResult.success && (
+                            <div className="mb-4">
+                                <div className="text-green-400 font-semibold mb-2">stake config files were generated!</div>
+                                {/* If a ZIP is available, show a single download button */}
+                                {stakeResult.fileUrl && stakeResult.fileName && (
+                                    <a
+                                        href={stakeResult.fileUrl}
+                                        download={stakeResult.fileName}
+                                        className="inline-block px-6 py-2 rounded-lg bg-gradient-to-r from-pink-500 to-red-600 text-white font-semibold shadow-lg hover:from-pink-600 hover:to-red-700"
+                                    >
+                                        Download All Stake Files (ZIP)
+                                    </a>
+                                )}
+                                {/* If multiple files are available as an array, show download links for each */}
+                                {stakeResult.stakeFiles && Array.isArray(stakeResult.stakeFiles) && stakeResult.stakeFiles.length > 1 && !stakeResult.fileUrl && (
+                                    <div className="flex flex-col gap-2 mt-2">
+                                        {stakeResult.stakeFiles.map((file: any, idx: number) => (
+                                            <a
+                                                key={file.fileName || idx}
+                                                href={`data:text/yaml;charset=utf-8,${encodeURIComponent(file.content)}`}
+                                                download={file.fileName || `stake_file_${idx + 1}.yaml`}
+                                                className="inline-block px-4 py-2 rounded-lg bg-gradient-to-r from-pink-500 to-red-600 text-white font-semibold shadow-lg hover:from-pink-600 hover:to-red-700"
+                                            >
+                                                Download {file.fileName || `Stake File ${idx + 1}`}
+                                            </a>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* Details Section */}
+                        {stakeResult.details && (
+                            <div className="mb-4 text-left text-sm bg-gray-800/60 rounded-lg p-4">
+                                <div className="mb-2"><span className="font-semibold text-gray-200">Owner Address:</span> <span className="font-mono text-blue-300">{stakeResult.details.ownerAddress}</span></div>
+                                {stakeResult.details.operator && <div className="mb-2"><span className="font-semibold text-gray-200">Operator:</span> <span className="font-mono text-pink-300">{stakeResult.details.operator}</span></div>}
+                                {stakeResult.details.amount && <div className="mb-2"><span className="font-semibold text-gray-200">Amount:</span> <span className="font-mono text-green-300">{stakeResult.details.amount.toLocaleString()} POKT</span></div>}
+                                {stakeResult.details.revShare && <div className="mb-2"><span className="font-semibold text-gray-200">Rev Share:</span> <span className="font-mono text-yellow-300">{stakeResult.details.revShare}</span></div>}
+                                {stakeResult.details.services && Array.isArray(stakeResult.details.services) && (
+                                    <div className="mb-2"><span className="font-semibold text-gray-200">Services:</span> <span className="font-mono text-purple-300">{stakeResult.details.services.join(', ')}</span></div>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* Show success message and download button if available, only once */}
+                        {stakeResult.success && (
+                            <div className="mb-4">
+                                <div className="text-green-400 font-semibold mb-2">stake config files were generated!</div>
+                                {stakeResult.fileUrl && stakeResult.fileName && (
+                                    <a
+                                        href={stakeResult.fileUrl}
+                                        download={stakeResult.fileName}
+                                        className="inline-block px-6 py-2 rounded-lg bg-gradient-to-r from-pink-500 to-red-600 text-white font-semibold shadow-lg hover:from-pink-600 hover:to-red-700"
+                                    >
+                                        Download Stake File
+                                    </a>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* Execute Stake Transactions - Always show if sessionId exists */}
+                        {stakeResult.sessionId && (
+                            <div className="mb-4 p-4 bg-gray-800/40 rounded-lg border border-gray-700">
+                                <h3 className="text-lg font-semibold text-gray-200 mb-3">Execute POKT CLI</h3>
+                                <p className="text-sm text-gray-400 mb-3">Execute POKT CLI commands directly from the frontend. The backend will handle the CLI execution with your wallet.</p>
+                                <div className="flex flex-col gap-3 items-center">
+                                    <div className="flex gap-2 w-full max-w-md">
+                                        <select
+                                            value={executeNetwork}
+                                            onChange={e => setExecuteNetwork(e.target.value)}
+                                            className="flex-1 px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600"
+                                        >
+                                            <option value="main">Mainnet</option>
+                                            <option value="beta">Beta</option>
+                                        </select>
+                                        <input
+                                            type="password"
+                                            placeholder="Passphrase (optional)"
+                                            value={executePassphrase}
+                                            onChange={e => setExecutePassphrase(e.target.value)}
+                                            className="flex-1 px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600"
+                                        />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            className="px-6 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-semibold shadow-lg hover:from-blue-700 hover:to-indigo-700"
+                                            disabled={executeLoading}
+                                            onClick={async () => {
+                                                setExecuteLoading(true);
+                                                setExecuteError(null);
+                                                try {
+                                                    DEBUG_CONFIG.log('[STAKE] Executing POKT CLI stake directly for sessionId:', stakeResult.sessionId);
+                                                    
+                                                    // Step 1: Get the stake file content from the backend
+                                                    const generateResponse = await fetch(`${backendUrl}/api/stake/generate-cli/${stakeResult.sessionId}`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                            network: executeNetwork,
+                                                            ownerAddress: walletAddress,
+                                                            keyringBackend: 'memory'
+                                                        })
+                                                    });
+                                                    
+                                                    if (!generateResponse.ok) {
+                                                        const errorResult = await generateResponse.json().catch(() => ({}));
+                                                        throw new Error(errorResult.error || errorResult.message || 'Failed to get stake file content');
+                                                    }
+                                                    
+                                                    const responseData = await generateResponse.json();
+                                                    DEBUG_CONFIG.log('[STAKE] Generated stake file content response:', responseData);
+                                                    
+                                                    // Step 2: Extract stake file content
+                                                    if (!responseData.success || !responseData.data?.success) {
+                                                        throw new Error('Failed to get stake file content from backend');
+                                                    }
+                                                    
+                                                    const stakeData = responseData.data.data;
+                                                    const unsignedTransactions = stakeData.unsignedTransactions || [];
+                                                    
+                                                    if (unsignedTransactions.length === 0) {
+                                                        throw new Error('No stake files found');
+                                                    }
+                                                    
+                                                    // Step 3: Execute POKT CLI directly with ALL stake files
+                                                    const stakeFilesPayload = unsignedTransactions.map((file: any, idx: number) => {
+                                                        if (!file.stakeFileContent) {
+                                                            throw new Error(`No stake file content found for file #${idx + 1}`);
+                                                        }
+                                                        return {
+                                                            content: file.stakeFileContent,
+                                                            fileName: file.fileName || `stake_file_${stakeResult.sessionId}_${idx + 1}.yaml`
+                                                        };
+                                                    });
+                                                    DEBUG_CONFIG.log('[STAKE] Executing POKT CLI with all stake files:', stakeFilesPayload);
+                                                    
+                                                    // Get the wallet information from storage
+                                                    const storedWallet = await storageService.get<any>('shannon_wallet');
+                                                    if (!storedWallet || !storedWallet.serialized) {
+                                                        throw new Error('No Shannon wallet found in storage. Please import your wallet first.');
+                                                    }
+                                                    
+                                                    // Extract the actual mnemonic from the wallet
+                                                    let mnemonic: string;
+                                                    if (storedWallet.parsed && storedWallet.parsed.mnemonic) {
+                                                        // If we have the parsed wallet with mnemonic
+                                                        mnemonic = storedWallet.parsed.mnemonic;
+                                                    } else if (storedWallet.mnemonic) {
+                                                        // If mnemonic is stored directly
+                                                        mnemonic = storedWallet.mnemonic;
+                                                    } else if (typeof storedWallet.serialized === 'string' && storedWallet.serialized.split(' ').length >= 12) {
+                                                        // If serialized is actually the mnemonic phrase
+                                                        mnemonic = storedWallet.serialized;
+                                                    } else {
+                                                        // Try to decrypt the wallet to get the mnemonic
+                                                        DEBUG_CONFIG.log('[STAKE] No mnemonic found in direct fields, attempting to decrypt wallet...');
+                                                        try {
+                                                            // Import the decryptWallet function from ShannonWallet
+                                                            const { decryptWallet } = await import('../controller/ShannonWallet');
+                                                            const walletInfo = await decryptWallet(storedWallet.serialized, 'CREA');
+                                                            mnemonic = walletInfo.mnemonic;
+                                                            DEBUG_CONFIG.log('[STAKE] Successfully decrypted wallet and extracted mnemonic');
+                                                        } catch (decryptError) {
+                                                            DEBUG_CONFIG.error('[STAKE] Failed to decrypt wallet:', decryptError);
+                                                            throw new Error('Could not extract mnemonic from wallet. Please re-import your wallet with the mnemonic phrase.');
+                                                        }
+                                                    }
+                                                    
+                                                    // Validate that we have a proper mnemonic (12 or 24 words)
+                                                    if (!mnemonic || mnemonic.split(' ').length < 12) {
+                                                        DEBUG_CONFIG.error('[STAKE] Invalid mnemonic format:', {
+                                                            mnemonic: mnemonic,
+                                                            wordCount: mnemonic ? mnemonic.split(' ').length : 0,
+                                                            isValid: mnemonic && (mnemonic.split(' ').length === 12 || mnemonic.split(' ').length === 24)
+                                                        });
+                                                        throw new Error('Invalid mnemonic format. Expected 12 or 24 words, but got: ' + (mnemonic ? mnemonic.split(' ').length : 0) + ' words.');
+                                                    }
+                                                    
+                                                    // Ensure mnemonic is properly formatted (lowercase, trimmed)
+                                                    mnemonic = mnemonic.toLowerCase().trim();
+                                                    
+                                                    DEBUG_CONFIG.log('[STAKE] Final mnemonic validation:', {
+                                                        wordCount: mnemonic.split(' ').length,
+                                                        isValid: mnemonic.split(' ').length === 12 || mnemonic.split(' ').length === 24,
+                                                        mnemonicPreview: `${mnemonic.substring(0, 50)}...`,
+                                                        mnemonicWords: mnemonic.split(' ').slice(0, 5).join(' ') + '...'
+                                                    });
+                                                    
+                                                    // Create a unique key name for this session
+                                                    const keyName = `owner`;
+                                                    
+                                                    // Prepare the request payload with ALL stake files
+                                                    const requestPayload = {
+                                                        stakeFiles: stakeFilesPayload,
+                                                        mnemonic: mnemonic,
+                                                        keyName: keyName,
+                                                        network: executeNetwork,
+                                                        ownerAddress: walletAddress,
+                                                        keyringBackend: 'test'
+                                                    };
+                                                    
+                                                    DEBUG_CONFIG.log('[STAKE] Request payload for execute-local-cli:', {
+                                                        hasStakeFiles: !!requestPayload.stakeFiles,
+                                                        stakeFilesLength: requestPayload.stakeFiles.length,
+                                                        stakeFileContentType: typeof requestPayload.stakeFiles[0].content,
+                                                        stakeFileContentLength: requestPayload.stakeFiles[0].content?.length || 0,
+                                                        hasMnemonic: !!requestPayload.mnemonic,
+                                                        mnemonicWordCount: requestPayload.mnemonic ? requestPayload.mnemonic.split(' ').length : 0,
+                                                        mnemonicPreview: requestPayload.mnemonic ? `${requestPayload.mnemonic.substring(0, 50)}...` : 'None',
+                                                        mnemonicType: typeof requestPayload.mnemonic,
+                                                        mnemonicFirstWords: requestPayload.mnemonic ? requestPayload.mnemonic.split(' ').slice(0, 3).join(' ') : 'None',
+                                                        mnemonicLastWords: requestPayload.mnemonic ? requestPayload.mnemonic.split(' ').slice(-3).join(' ') : 'None',
+                                                        keyName: requestPayload.keyName,
+                                                        keyNameType: typeof requestPayload.keyName,
+                                                        network: requestPayload.network,
+                                                        ownerAddress: requestPayload.ownerAddress
+                                                    });
+                                                    
+                                                    // Log the full payload for debugging (but mask the mnemonic for security)
+                                                    const maskedPayload = {
+                                                        ...requestPayload,
+                                                        mnemonic: requestPayload.mnemonic ? 
+                                                            `${requestPayload.mnemonic.split(' ').slice(0, 3).join(' ')} ... ${requestPayload.mnemonic.split(' ').slice(-3).join(' ')}` : 
+                                                            'None'
+                                                    };
+                                                    DEBUG_CONFIG.log('[STAKE] Full request payload (mnemonic masked):', JSON.stringify(maskedPayload, null, 2));
+                                                    
+                                                    // Execute POKT CLI using a local execution endpoint
+                                                    const executeResponse = await fetch(`${backendUrl}/api/stake/execute-local-cli`, {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify(requestPayload)
+                                                    });
+                                                    
+                                                    // If the first format fails, try alternative formats
+                                                    if (!executeResponse.ok) {
+                                                        const errorResult = await executeResponse.json().catch(() => ({}));
+                                                        DEBUG_CONFIG.log('[STAKE] First attempt failed, trying alternative format...', errorResult);
+                                                        
+                                                        // Try alternative format: single stake file content (first file)
+                                                        const alternativePayload = {
+                                                            stakeFileContent: stakeFilesPayload[0].content,
+                                                            mnemonic: mnemonic,
+                                                            keyName: keyName,
+                                                            network: executeNetwork,
+                                                            ownerAddress: walletAddress,
+                                                            keyringBackend: 'test'
+                                                        };
+                                                        
+                                                        DEBUG_CONFIG.log('[STAKE] Trying alternative payload format:', alternativePayload);
+                                                        
+                                                        const alternativeResponse = await fetch(`${backendUrl}/api/stake/execute-local-cli`, {
+                                                            method: 'POST',
+                                                            headers: { 'Content-Type': 'application/json' },
+                                                            body: JSON.stringify(alternativePayload)
+                                                        });
+                                                        
+                                                        if (!alternativeResponse.ok) {
+                                                            const altErrorResult = await alternativeResponse.json().catch(() => ({}));
+                                                            DEBUG_CONFIG.log('[STAKE] Alternative format also failed, trying third format...', altErrorResult);
+                                                            
+                                                            // Try third format: array of stake file contents (all files)
+                                                            const thirdPayload = {
+                                                                stakeFileContents: stakeFilesPayload.map((f: any) => f.content),
+                                                                mnemonic: mnemonic,
+                                                                keyName: keyName,
+                                                                network: executeNetwork,
+                                                                ownerAddress: walletAddress,
+                                                                keyringBackend: 'test'
+                                                            };
+                                                            
+                                                            DEBUG_CONFIG.log('[STAKE] Trying third payload format:', thirdPayload);
+                                                            
+                                                            const thirdResponse = await fetch(`${backendUrl}/api/stake/execute-local-cli`, {
+                                                                method: 'POST',
+                                                                headers: { 'Content-Type': 'application/json' },
+                                                                body: JSON.stringify(thirdPayload)
+                                                            });
+                                                            
+                                                            if (!thirdResponse.ok) {
+                                                                const thirdErrorResult = await thirdResponse.json().catch(() => ({}));
+                                                                DEBUG_CONFIG.log('[STAKE] Third format also failed, trying fourth format...', thirdErrorResult);
+                                                                
+                                                                // Try fourth format: separate mnemonic field with different structure (all files)
+                                                                const fourthPayload = {
+                                                                    stakeFiles: stakeFilesPayload,
+                                                                    walletMnemonic: mnemonic, // Different field name
+                                                                    keyName: keyName,
+                                                                    network: executeNetwork,
+                                                                    ownerAddress: walletAddress,
+                                                                    keyringBackend: 'test',
+                                                                    mnemonicPhrase: mnemonic // Also include as separate field
+                                                                };
+                                                                
+                                                                DEBUG_CONFIG.log('[STAKE] Trying fourth payload format:', {
+                                                                    ...fourthPayload,
+                                                                    walletMnemonic: fourthPayload.walletMnemonic ? 
+                                                                        `${fourthPayload.walletMnemonic.split(' ').slice(0, 3).join(' ')} ... ${fourthPayload.walletMnemonic.split(' ').slice(-3).join(' ')}` : 
+                                                                        'None',
+                                                                    mnemonicPhrase: fourthPayload.mnemonicPhrase ? 
+                                                                        `${fourthPayload.mnemonicPhrase.split(' ').slice(0, 3).join(' ')} ... ${fourthPayload.mnemonicPhrase.split(' ').slice(-3).join(' ')}` : 
+                                                                        'None'
+                                                                });
+                                                                
+                                                                const fourthResponse = await fetch(`${backendUrl}/api/stake/execute-local-cli`, {
+                                                                    method: 'POST',
+                                                                    headers: { 'Content-Type': 'application/json' },
+                                                                    body: JSON.stringify(fourthPayload)
+                                                                });
+                                                                
+                                                                if (!fourthResponse.ok) {
+                                                                    const fourthErrorResult = await fourthResponse.json().catch(() => ({}));
+                                                                    DEBUG_CONFIG.error('[STAKE] All four formats failed:', {
+                                                                        firstError: errorResult,
+                                                                        secondError: altErrorResult,
+                                                                        thirdError: thirdErrorResult,
+                                                                        fourthError: fourthErrorResult
+                                                                    });
+                                                                    throw new Error(`Failed to execute POKT CLI commands. All payload formats failed. Please check the backend API documentation.`);
+                                                                }
+                                                                
+                                                                // Use the fourth response
+                                                                const executeData = await fourthResponse.json();
+                                                                DEBUG_CONFIG.log('[STAKE] Fourth format succeeded:', executeData);
+                                                                
+                                                                // Continue with the rest of the success flow...
+                                                                const executionSummary = {
+                                                                    method: 'pokt-cli-executed',
+                                                                    sessionId: stakeResult.sessionId,
+                                                                    network: executeNetwork,
+                                                                    ownerAddress: walletAddress,
+                                                                    ownerKeyName: keyName,
+                                                                    keyringBackend: 'test',
+                                                                    stakeFileContent: (stakeFilesPayload[0]?.stakeFileContent || stakeFilesPayload[0]?.content || '').substring(0, 200) + '...',
+                                                                    result: executeData,
+                                                                    executed: true,
+                                                                    formatUsed: 'fourth'
+                                                                };
+                                                                
+                                                                DEBUG_CONFIG.log('[STAKE] POKT CLI execution completed successfully with fourth format:', executionSummary);
+                                                                setStakeResult(prev => prev ? { 
+                                                                    ...prev, 
+                                                                    executeResult: executionSummary 
+                                                                } : prev);
+                                                                return; // Exit early since we succeeded with fourth format
+                                                            }
+                                                            
+                                                            // Use the third response
+                                                            const executeData = await thirdResponse.json();
+                                                            DEBUG_CONFIG.log('[STAKE] Third format succeeded:', executeData);
+                                                            
+                                                            // Continue with the rest of the success flow...
+                                                            const executionSummary = {
+                                                                method: 'pokt-cli-executed',
+                                                                sessionId: stakeResult.sessionId,
+                                                                network: executeNetwork,
+                                                                ownerAddress: walletAddress,
+                                                                ownerKeyName: keyName,
+                                                                keyringBackend: 'test',
+                                                                stakeFileContent: (stakeFilesPayload[0]?.stakeFileContent || stakeFilesPayload[0]?.content || '').substring(0, 200) + '...',
+                                                                result: executeData,
+                                                                executed: true,
+                                                                formatUsed: 'third'
+                                                            };
+                                                            
+                                                            DEBUG_CONFIG.log('[STAKE] POKT CLI execution completed successfully with third format:', executionSummary);
+                                                            setStakeResult(prev => prev ? { 
+                                                                ...prev, 
+                                                                executeResult: executionSummary 
+                                                            } : prev);
+                                                            return; // Exit early since we succeeded with third format
+                                                        }
+                                                        
+                                                        // Use the alternative response
+                                                        const executeData = await alternativeResponse.json();
+                                                        DEBUG_CONFIG.log('[STAKE] Alternative format succeeded:', executeData);
+                                                        
+                                                        // Continue with the rest of the success flow...
+                                                        const executionSummary = {
+                                                            method: 'pokt-cli-executed',
+                                                            sessionId: stakeResult.sessionId,
+                                                            network: executeNetwork,
+                                                            ownerAddress: walletAddress,
+                                                            ownerKeyName: keyName,
+                                                            keyringBackend: 'test',
+                                                            stakeFileContent: (stakeFilesPayload[0]?.stakeFileContent || stakeFilesPayload[0]?.content || '').substring(0, 200) + '...',
+                                                            result: executeData,
+                                                            executed: true,
+                                                            formatUsed: 'alternative'
+                                                        };
+                                                        
+                                                        DEBUG_CONFIG.log('[STAKE] POKT CLI execution completed successfully with alternative format:', executionSummary);
+                                                        setStakeResult(prev => prev ? { 
+                                                            ...prev, 
+                                                            executeResult: executionSummary 
+                                                        } : prev);
+                                                        return; // Exit early since we succeeded with alternative format
+                                                    }
+                                                    
+                                                    const executeData = await executeResponse.json();
+                                                    DEBUG_CONFIG.log('[STAKE] POKT CLI execution response:', executeData);
+                                                    
+                                                    // Step 4: Update result with execution details
+                                                    const executionSummary = {
+                                                        method: 'pokt-cli-executed',
+                                                        sessionId: stakeResult.sessionId,
+                                                        network: executeNetwork,
+                                                        ownerAddress: walletAddress,
+                                                        ownerKeyName: keyName,
+                                                        keyringBackend: 'test',
+                                                        stakeFileContent: (stakeFilesPayload[0]?.stakeFileContent || stakeFilesPayload[0]?.content || '').substring(0, 200) + '...',
+                                                        result: executeData,
+                                                        executed: true,
+                                                        formatUsed: 'primary'
+                                                    };
+                                                    
+                                                    DEBUG_CONFIG.log('[STAKE] POKT CLI execution completed successfully:', executionSummary);
+                                                    setStakeResult(prev => prev ? { 
+                                                        ...prev, 
+                                                        executeResult: executionSummary 
+                                                    } : prev);
+                                                    
+                                                } catch (err: any) {
+                                                    DEBUG_CONFIG.error('[STAKE] POKT CLI execution error:', err);
+                                                    setExecuteError(err.message || 'Error executing POKT CLI commands');
+                                                } finally {
+                                                    setExecuteLoading(false);
+                                                }
+                                            }}
+                                        >
+                                            {executeLoading ? 'Executing...' : 'Execute POKT CLI'}
+                                        </button>
+                                        <button
+                                            className="px-6 py-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold shadow-lg hover:from-green-700 hover:to-emerald-700"
+                                            onClick={async () => {
+                                                try {
+                                                    DEBUG_CONFIG.log('[STAKE] Checking status for sessionId:', stakeResult.sessionId);
+                                                    const response = await fetch(`${backendUrl}/api/stake/status/${stakeResult.sessionId}`);
+                                                    const result = await response.json();
+                                                    DEBUG_CONFIG.log('[STAKE] Status response:', result);
+                                                    setStakeResult(prev => prev ? { ...prev, statusResult: result } : prev);
+                                                } catch (err: any) {
+                                                    DEBUG_CONFIG.error('[STAKE] Status check error:', err);
+                                                    setExecuteError(err.message || 'Error checking status');
+                                                }
+                                            }}
+                                        >
+                                            Check Status
+                                        </button>
+                                    </div>
+                                    {executeError && <div className="text-red-400 text-sm">{executeError}</div>}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Show status result */}
+                        {stakeResult.statusResult && (
+                            <div className="mb-4 text-left text-xs bg-gray-800/60 rounded-lg p-4 max-h-60 overflow-y-auto">
+                                <div className="font-semibold text-blue-400 mb-2">Status Result:</div>
+                                <pre className="whitespace-pre-wrap text-gray-200">{typeof stakeResult.statusResult === 'string' ? stakeResult.statusResult : JSON.stringify(stakeResult.statusResult, null, 2)}</pre>
+                            </div>
+                        )}
+                        
+                        {/* Show warning and download button if mnemonicsData is present */}
+                        {stakeResult?.mnemonicsData && (
+                            <div className="mb-4">
+                                <div className="text-yellow-400 font-semibold mb-2">Security Warning</div>
+                                <div className="text-yellow-200 text-sm mb-2">This file contains your node wallet mnemonics. Store it securely. If you lose it, you cannot recover your node wallets.</div>
+                                <a
+                                    href={stakeResult.mnemonicsUrl}
+                                    download={stakeResult.mnemonicsFileName}
+                                    className="inline-block px-6 py-2 rounded-lg bg-gradient-to-r from-yellow-500 to-orange-600 text-white font-semibold shadow-lg hover:from-yellow-600 hover:to-orange-700"
+                                >
+                                    Download Wallet Mnemonics JSON
+                                </a>
+                            </div>
+                        )}
+
+                        <div className="flex justify-center gap-4 mt-4">
+                            <button
+                                className="px-6 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold"
+                                onClick={() => setStakeResult(null)}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </motion.div>
     );

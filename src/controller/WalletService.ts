@@ -94,10 +94,14 @@ export class WalletService {
      */
     async createWallet(password: string, network: NetworkType = 'shannon', isMainnet: boolean = false): Promise<WalletInfo> {
         try {
+            console.log('🎯 WalletService: Starting createWallet...', { network, isMainnet, hasPassword: !!password });
+            
             // Guardar configuración de red
             this.networkType = network;
             this.isMainnet = isMainnet;
             storageService.set(STORAGE_KEYS.NETWORK_TYPE, network);
+            console.log('🎯 WalletService: Network configuration saved');
+            
             // NO SOBRESCRIBIR la selección manual del usuario
             // storageService.set(STORAGE_KEYS.NETWORK, isMainnet === true ? 'mainnet' : 'testnet');
 
@@ -106,7 +110,9 @@ export class WalletService {
             DEBUG_CONFIG.log(`🔍 DEBUG createWallet: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
             // Crear wallet usando el WalletManager
+            console.log('🎯 WalletService: Calling walletManager.createWallet...');
             const walletInfo = await this.walletManager.createWallet(password);
+            console.log('🎯 WalletService: WalletManager.createWallet completed:', { address: walletInfo.address });
 
             // Verificar que la dirección coincida con la configuración de red
             const detectedConfig = this.detectNetworkFromAddress(walletInfo.address);
@@ -117,40 +123,18 @@ export class WalletService {
             // Guardar la dirección y la wallet serializada
             this.currentWalletAddress = walletInfo.address;
             this.serializedWallet = walletInfo.serializedWallet;
+            console.log('🎯 WalletService: Wallet info saved to service');
 
             // Guardar en localStorage con la clave privada
             await storageService.set(STORAGE_KEYS.WALLET_ADDRESS, walletInfo.address);
-
-            // Guardar wallet completa con clave privada
-            // if (network === 'shannon') {
-            //     await storageService.set('shannon_wallet', {
-            //         serialized: serializedWallet,
-            //         privateKey: privateKey, // Guardar la clave privada
-            //         network: 'shannon',
-            //         timestamp: Date.now(),
-            //         parsed: { address }
-            //     });
-
-            //     // También guardar en el array de wallets si existe
-            //     const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
-            //     if (Array.isArray(shannonWallets)) {
-            //         // Añadir nueva wallet
-            //         shannonWallets.push({
-            //             id: `shannon_${Date.now()}`,
-            //             serialized: serializedWallet,
-            //             privateKey: privateKey, // Guardar la clave privada
-            //             network: 'shannon',
-            //             timestamp: Date.now(),
-            //             parsed: { address }
-            //         });
-
-            //         await storageService.set('shannon_wallets', shannonWallets);
-            //     }
-            // }
+            console.log('🎯 WalletService: Wallet address saved to storage');
 
             // Obtener balance
+            console.log('🎯 WalletService: Getting balance...');
             const balance = await this.getBalance(walletInfo.address);
+            console.log('🎯 WalletService: Balance obtained:', balance);
 
+            console.log('🎯 WalletService: createWallet completed successfully');
             return {
                 address: walletInfo.address,
                 balance,
@@ -158,6 +142,12 @@ export class WalletService {
                 isMainnet
             };
         } catch (error) {
+            console.error('🎯 WalletService: Error in createWallet:', error);
+            console.error('🎯 WalletService: Error details:', {
+                message: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : 'No stack trace',
+                name: error instanceof Error ? error.name : 'Unknown error type'
+            });
             console.error('Error creating wallet:', error);
             throw new Error(`Could not create wallet: ${error}`);
         }

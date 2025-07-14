@@ -99,3 +99,5 @@ export const ERROR_MESSAGES = {
     SEND_TRANSACTION_ERROR: "Error sending transaction. Please verify that you have sufficient balance to cover the transaction and fees.",
     INVALID_AMOUNT: "The provided amount is not valid. It must be a number greater than 0."
 }; 
+
+export const backendUrl = import.meta.env.VITE_MIGRATION_API_URL || 'http://localhost:3001'; 
