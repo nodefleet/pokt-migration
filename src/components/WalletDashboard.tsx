@@ -1240,7 +1240,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                             onChange={e => setExecuteNetwork(e.target.value)}
                                             className="flex-1 px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600"
                                         >
-                                            <option value="main">Mainnet</option>
+                                            <option value="main" disabled>Mainnet (disabled in staging)</option>
                                             <option value="beta">Beta</option>
                                         </select>
                                     </div>
