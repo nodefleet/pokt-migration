@@ -999,8 +999,9 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                 numberOfNodes: nodes
                             }
                         });
-                        let mnemonicsUrl: string | undefined = undefined;
-                        let mnemonicsFileName: string | undefined = undefined;
+                        let mnemonicsUrl: string = '';
+                        let mnemonicsFileName: string = '';
+                        let sessionId: string = '';
                         try {
                             const response = await fetch(`${backendUrl}/api/stake/create`, {
                                 method: 'POST',
@@ -1242,13 +1243,6 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                             <option value="main">Mainnet</option>
                                             <option value="beta">Beta</option>
                                         </select>
-                                        <input
-                                            type="password"
-                                            placeholder="Passphrase (optional)"
-                                            value={executePassphrase}
-                                            onChange={e => setExecutePassphrase(e.target.value)}
-                                            className="flex-1 px-3 py-2 rounded-lg bg-gray-800 text-white border border-gray-600"
-                                        />
                                     </div>
                                     <div className="flex gap-2">
                                         <button
@@ -1492,26 +1486,62 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                 const executeData = await fourthResponse.json();
                                                                 DEBUG_CONFIG.log('[STAKE] Fourth format succeeded:', executeData);
                                                                 
-                                                                // Continue with the rest of the success flow...
-                                                                const executionSummary = {
-                                                                    method: 'pokt-cli-executed',
-                                                                    sessionId: stakeResult.sessionId,
-                                                                    network: executeNetwork,
-                                                                    ownerAddress: walletAddress,
-                                                                    ownerKeyName: keyName,
-                                                                    keyringBackend: 'test',
-                                                                    stakeFileContent: (stakeFilesPayload[0]?.stakeFileContent || stakeFilesPayload[0]?.content || '').substring(0, 200) + '...',
-                                                                    result: executeData,
-                                                                    executed: true,
-                                                                    formatUsed: 'fourth'
-                                                                };
-                                                                
-                                                                DEBUG_CONFIG.log('[STAKE] POKT CLI execution completed successfully with fourth format:', executionSummary);
-                                                                setStakeResult(prev => prev ? { 
-                                                                    ...prev, 
-                                                                    executeResult: executionSummary 
-                                                                } : prev);
-                                                                return; // Exit early since we succeeded with fourth format
+                                                                // Extract mnemonics and wallet info from the response
+                                                                const transactions = executeData?.result?.data?.data?.transactions || [];
+                                                                sessionId = executeData?.sessionId || executeData?.result?.data?.data?.sessionId || stakeResult?.sessionId || '';
+                                                                const ownerAddressResp = executeData?.ownerAddress || executeData?.result?.ownerAddress || walletAddress || '';
+                                                                const createdAt = new Date().toISOString();
+                                                                const fileUrl = stakeResult?.fileUrl || '';
+                                                                const fileName = stakeResult?.fileName || '';
+                                                                const details = stakeResult?.details || {};
+                                                                const nodes = transactions.length;
+                                                                const stakeFiles = stakeResult?.stakeFiles || [];
+                                                                const wallets = transactions.map((tx: any, idx: number) => ({
+                                                                  nodeNumber: idx + 1,
+                                                                  walletName: tx.keyName || `node_${idx + 1}`,
+                                                                  address: tx.walletAddress || tx.operatorAddress,
+                                                                  mnemonic: tx.mnemonic,
+                                                                  stakeFile: tx.stakeFile,
+                                                                  homePath: tx.homeDir,
+                                                                }));
+                                                                if (wallets.length > 0 && wallets.some((w: any) => w.mnemonic)) {
+                                                                  const mnemonicsData = {
+                                                                    sessionId,
+                                                                    createdAt,
+                                                                    ownerAddress: ownerAddressResp,
+                                                                    numberOfNodes: wallets.length,
+                                                                    totalWallets: wallets.length,
+                                                                    wallets,
+                                                                    downloadInstructions: "Store this file securely. It contains your node wallet mnemonics.",
+                                                                    securityWarning: "Keep this file secure and private. If you lose it, you cannot recover your node wallets."
+                                                                  };
+                                                                  const mnemonicsJson = JSON.stringify(mnemonicsData, null, 2);
+                                                                  const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
+                                                                  mnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                                                  mnemonicsFileName = `wallet_mnemonics_${sessionId || Date.now()}.json`;
+                                                                  // Auto-download
+                                                                  const link = document.createElement('a');
+                                                                  link.href = mnemonicsUrl;
+                                                                  link.download = mnemonicsFileName;
+                                                                  document.body.appendChild(link);
+                                                                  link.click();
+                                                                  document.body.removeChild(link);
+                                                                  // Save to stakeResult for manual download option
+                                                                  setStakeResult(prev => ({
+                                                                    ...(prev || {}),
+                                                                    success: true,
+                                                                    message: executeData.message || `Successfully created ${nodes} stake file(s)!`,
+                                                                    fileUrl: fileUrl,
+                                                                    fileName: fileName,
+                                                                    sessionId: sessionId,
+                                                                    details: details,
+                                                                    stakeFiles: stakeFiles,
+                                                                    mnemonicsData: mnemonicsData,
+                                                                    mnemonicsUrl: mnemonicsUrl,
+                                                                    mnemonicsFileName: mnemonicsFileName
+                                                                  }));
+                                                                  return; // Exit early since we succeeded with fourth format
+                                                                }
                                                             }
                                                             
                                                             // Use the third response
