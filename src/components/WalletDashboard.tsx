@@ -113,6 +113,8 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const [executeNetwork, setExecuteNetwork] = useState('main');
     const [executePassphrase, setExecutePassphrase] = useState('');
     const [autoRefreshInterval, setAutoRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+    const [showStakeConfirmation, setShowStakeConfirmation] = useState(false);
+    const [pendingStakeNodes, setPendingStakeNodes] = useState<number>(0);
 
     const handleLogoutClick = () => {
         setShowLogoutConfirm(true);
@@ -763,6 +765,182 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const isOffline = walletManager?.isOfflineMode ? walletManager.isOfflineMode() : false;
     const disableFeatures = isOffline && isMorseNetwork;
 
+    // Function to handle the actual staking process after confirmation
+    const handleActualStaking = async (nodes: number) => {
+        DEBUG_CONFIG.log('[STAKE] Initiating stake API call', {
+            backendUrl,
+            ownerAddress: walletAddress,
+            numberOfNodes: nodes
+        });
+        DEBUG_CONFIG.log('[STAKE] Stake nodes request payload:', {
+            url: `${backendUrl}/api/stake/create`,
+            payload: {
+                ownerAddress: walletAddress,
+                numberOfNodes: nodes
+            }
+        });
+        let mnemonicsUrl: string = '';
+        let mnemonicsFileName: string = '';
+        let sessionId: string = '';
+        try {
+            const response = await fetch(`${backendUrl}/api/stake/create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ownerAddress: walletAddress,
+                    numberOfNodes: nodes
+                }),
+            });
+            DEBUG_CONFIG.log('[STAKE] API response status:', response.status);
+            DEBUG_CONFIG.log('[STAKE] API response headers:', Object.fromEntries(response.headers.entries()));
+            
+            let fileUrl, fileName, sessionId, details;
+            if (response.ok) {
+                const contentType = response.headers.get('content-type');
+                DEBUG_CONFIG.log('[STAKE] Content-Type:', contentType);
+                
+                // First, try to get the raw response text to see what we're actually getting
+                const responseText = await response.text();
+                DEBUG_CONFIG.log('[STAKE] Raw response text (first 500 chars):', responseText.substring(0, 500));
+                
+                // Try to parse as JSON regardless of content-type
+                let jsonResponse = null;
+                try {
+                    jsonResponse = JSON.parse(responseText);
+                    DEBUG_CONFIG.log('[STAKE] Successfully parsed as JSON:', jsonResponse);
+                } catch (parseError) {
+                    DEBUG_CONFIG.log('[STAKE] Could not parse as JSON:', parseError);
+                }
+                
+                if (contentType && contentType.includes('application/zip')) {
+                    // Handle ZIP file response
+                    const blob = new Blob([responseText], { type: 'application/zip' });
+                    fileName = `stake_files_${Date.now()}.zip`;
+                    fileUrl = URL.createObjectURL(blob);
+                    
+                    // Try to get sessionId from multiple sources
+                    const responseSessionId = response.headers.get('x-session-id') || 
+                                             response.headers.get('session-id') ||
+                                             response.headers.get('x-stake-session-id') ||
+                                             (jsonResponse && jsonResponse.sessionId) ||
+                                             (jsonResponse && jsonResponse.data && jsonResponse.data.sessionId);
+                    
+                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from headers:', response.headers.get('x-session-id'));
+                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from session-id header:', response.headers.get('session-id'));
+                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from x-stake-session-id header:', response.headers.get('x-stake-session-id'));
+                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from JSON response:', jsonResponse && jsonResponse.sessionId);
+                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from JSON response.data:', jsonResponse && jsonResponse.data && jsonResponse.data.sessionId);
+                    DEBUG_CONFIG.log('[STAKE] ZIP response - Final sessionId:', responseSessionId);
+                    
+                    setStakeResult({ 
+                        success: true, 
+                        message: `Successfully created ${nodes} stake file(s)!`, 
+                        fileUrl, 
+                        fileName,
+                        sessionId: responseSessionId || undefined,
+                        details: jsonResponse && jsonResponse.details
+                    });
+                } else {
+                    // Handle JSON response
+                    if (jsonResponse) {
+                        DEBUG_CONFIG.log('[STAKE] JSON API response body:', jsonResponse);
+                        
+                        // Try multiple possible locations for sessionId
+                        sessionId = jsonResponse.sessionId || 
+                                   jsonResponse.data?.sessionId ||
+                                   jsonResponse.result?.sessionId ||
+                                   jsonResponse.response?.sessionId;
+                        
+                        details = jsonResponse.details || 
+                                 jsonResponse.data?.details ||
+                                 jsonResponse.result?.details;
+                        
+                        DEBUG_CONFIG.log('[STAKE] Extracted sessionId:', sessionId);
+                        DEBUG_CONFIG.log('[STAKE] Extracted details:', details);
+                        DEBUG_CONFIG.log('[STAKE] All possible sessionId locations:', {
+                            'jsonResponse.sessionId': jsonResponse.sessionId,
+                            'jsonResponse.data?.sessionId': jsonResponse.data?.sessionId,
+                            'jsonResponse.result?.sessionId': jsonResponse.result?.sessionId,
+                            'jsonResponse.response?.sessionId': jsonResponse.response?.sessionId
+                        });
+                        
+                        if (jsonResponse.fileBase64 && jsonResponse.fileName) {
+                            const link = document.createElement('a');
+                            link.href = `data:application/zip;base64,${jsonResponse.fileBase64}`;
+                            link.download = jsonResponse.fileName;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            // If mnemonicsData is present, trigger immediate download
+                            if (jsonResponse.mnemonicsData) {
+                                const mnemonicsJson = JSON.stringify(jsonResponse.mnemonicsData, null, 2);
+                                const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
+                                mnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                mnemonicsFileName = `wallet_mnemonics_${jsonResponse.mnemonicsData.sessionId || sessionId || Date.now()}.json`;
+                                // Auto-download
+                                const mnemonicsLink = document.createElement('a');
+                                mnemonicsLink.href = mnemonicsUrl;
+                                mnemonicsLink.download = mnemonicsFileName;
+                                document.body.appendChild(mnemonicsLink);
+                                mnemonicsLink.click();
+                                document.body.removeChild(mnemonicsLink);
+                            }
+                            setStakeResult({ 
+                                success: true, 
+                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
+                                fileUrl, 
+                                fileName, 
+                                sessionId, 
+                                details, 
+                                stakeFiles: jsonResponse.stakeFiles || [],
+                                mnemonicsData: jsonResponse.mnemonicsData,
+                                mnemonicsUrl,
+                                mnemonicsFileName
+                            });
+                        } else if (jsonResponse.fileUrl && jsonResponse.fileName) {
+                            setStakeResult({ 
+                                success: true, 
+                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
+                                fileUrl: jsonResponse.fileUrl, 
+                                fileName: jsonResponse.fileName, 
+                                sessionId, 
+                                details, 
+                                stakeFiles: jsonResponse.stakeFiles || [],
+                                mnemonicsData: jsonResponse.mnemonicsData,
+                                mnemonicsUrl: jsonResponse.mnemonicsUrl,
+                                mnemonicsFileName: jsonResponse.mnemonicsFileName
+                            });
+                        } else {
+                            setStakeResult({ 
+                                success: true, 
+                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
+                                sessionId, 
+                                details, 
+                                stakeFiles: jsonResponse.stakeFiles || [],
+                                mnemonicsData: jsonResponse.mnemonicsData,
+                                mnemonicsUrl: jsonResponse.mnemonicsUrl,
+                                mnemonicsFileName: jsonResponse.mnemonicsFileName
+                            });
+                        }
+                    } else {
+                        DEBUG_CONFIG.log('[STAKE] No JSON response and not ZIP - unexpected response type');
+                        setStakeResult({ 
+                            success: false, 
+                            message: 'Unexpected response format from server' 
+                        });
+                    }
+                }
+            } else {
+                const result = await response.json().catch(() => ({}));
+                DEBUG_CONFIG.log('[STAKE] Error response:', result);
+                setStakeResult({ success: false, message: result.error || 'Failed to create stake files' });
+            }
+        } catch (error: any) {
+            DEBUG_CONFIG.error('[STAKE] Network error:', error);
+            setStakeResult({ success: false, message: 'Network error: ' + (error.message || error) });
+        }
+    };
+
     return (
         <motion.div
             className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-950 text-white pb-20 rounded-t-lg"
@@ -986,205 +1164,78 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                     balance={parseFloat(balance) / 1_000_000}
                     onClose={() => setShowStakeDialog(false)}
                     onStake={async (nodes) => {
-                        setShowStakeDialog(false);
-                        DEBUG_CONFIG.log('[STAKE] Initiating stake API call', {
-                            backendUrl,
-                            ownerAddress: walletAddress,
-                            numberOfNodes: nodes
-                        });
-                        DEBUG_CONFIG.log('[STAKE] Stake nodes request payload:', {
-                            url: `${backendUrl}/api/stake/create`,
-                            payload: {
-                                ownerAddress: walletAddress,
-                                numberOfNodes: nodes
-                            }
-                        });
-                        let mnemonicsUrl: string = '';
-                        let mnemonicsFileName: string = '';
-                        let sessionId: string = '';
-                        try {
-                            const response = await fetch(`${backendUrl}/api/stake/create`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    ownerAddress: walletAddress,
-                                    numberOfNodes: nodes
-                                }),
-                            });
-                            DEBUG_CONFIG.log('[STAKE] API response status:', response.status);
-                            DEBUG_CONFIG.log('[STAKE] API response headers:', Object.fromEntries(response.headers.entries()));
-                            
-                            let fileUrl, fileName, sessionId, details;
-                            if (response.ok) {
-                                const contentType = response.headers.get('content-type');
-                                DEBUG_CONFIG.log('[STAKE] Content-Type:', contentType);
-                                
-                                // First, try to get the raw response text to see what we're actually getting
-                                const responseText = await response.text();
-                                DEBUG_CONFIG.log('[STAKE] Raw response text (first 500 chars):', responseText.substring(0, 500));
-                                
-                                // Try to parse as JSON regardless of content-type
-                                let jsonResponse = null;
-                                try {
-                                    jsonResponse = JSON.parse(responseText);
-                                    DEBUG_CONFIG.log('[STAKE] Successfully parsed as JSON:', jsonResponse);
-                                } catch (parseError) {
-                                    DEBUG_CONFIG.log('[STAKE] Could not parse as JSON:', parseError);
-                                }
-                                
-                                if (contentType && contentType.includes('application/zip')) {
-                                    // Handle ZIP file response
-                                    const blob = new Blob([responseText], { type: 'application/zip' });
-                                    fileName = `stake_files_${Date.now()}.zip`;
-                                    fileUrl = URL.createObjectURL(blob);
-                                    
-                                    // Try to get sessionId from multiple sources
-                                    const responseSessionId = response.headers.get('x-session-id') || 
-                                                             response.headers.get('session-id') ||
-                                                             response.headers.get('x-stake-session-id') ||
-                                                             (jsonResponse && jsonResponse.sessionId) ||
-                                                             (jsonResponse && jsonResponse.data && jsonResponse.data.sessionId);
-                                    
-                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from headers:', response.headers.get('x-session-id'));
-                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from session-id header:', response.headers.get('session-id'));
-                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from x-stake-session-id header:', response.headers.get('x-stake-session-id'));
-                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from JSON response:', jsonResponse && jsonResponse.sessionId);
-                                    DEBUG_CONFIG.log('[STAKE] ZIP response - sessionId from JSON response.data:', jsonResponse && jsonResponse.data && jsonResponse.data.sessionId);
-                                    DEBUG_CONFIG.log('[STAKE] ZIP response - Final sessionId:', responseSessionId);
-                                    
-                                    setStakeResult({ 
-                                        success: true, 
-                                        message: `Successfully created ${nodes} stake file(s)!`, 
-                                        fileUrl, 
-                                        fileName,
-                                        sessionId: responseSessionId || undefined,
-                                        details: jsonResponse && jsonResponse.details
-                                    });
-                                } else {
-                                    // Handle JSON response
-                                    if (jsonResponse) {
-                                        DEBUG_CONFIG.log('[STAKE] JSON API response body:', jsonResponse);
-                                        
-                                        // Try multiple possible locations for sessionId
-                                        sessionId = jsonResponse.sessionId || 
-                                                   jsonResponse.data?.sessionId ||
-                                                   jsonResponse.result?.sessionId ||
-                                                   jsonResponse.response?.sessionId;
-                                        
-                                        details = jsonResponse.details || 
-                                                 jsonResponse.data?.details ||
-                                                 jsonResponse.result?.details;
-                                        
-                                        DEBUG_CONFIG.log('[STAKE] Extracted sessionId:', sessionId);
-                                        DEBUG_CONFIG.log('[STAKE] Extracted details:', details);
-                                        DEBUG_CONFIG.log('[STAKE] All possible sessionId locations:', {
-                                            'jsonResponse.sessionId': jsonResponse.sessionId,
-                                            'jsonResponse.data?.sessionId': jsonResponse.data?.sessionId,
-                                            'jsonResponse.result?.sessionId': jsonResponse.result?.sessionId,
-                                            'jsonResponse.response?.sessionId': jsonResponse.response?.sessionId
-                                        });
-                                        
-                                        if (jsonResponse.fileBase64 && jsonResponse.fileName) {
-                                            const link = document.createElement('a');
-                                            link.href = `data:application/zip;base64,${jsonResponse.fileBase64}`;
-                                            link.download = jsonResponse.fileName;
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                            // If mnemonicsData is present, trigger immediate download
-                                            if (jsonResponse.mnemonicsData) {
-                                                const mnemonicsJson = JSON.stringify(jsonResponse.mnemonicsData, null, 2);
-                                                const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
-                                                mnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
-                                                mnemonicsFileName = `wallet_mnemonics_${jsonResponse.mnemonicsData.sessionId || sessionId || Date.now()}.json`;
-                                                // Auto-download
-                                                const mnemonicsLink = document.createElement('a');
-                                                mnemonicsLink.href = mnemonicsUrl;
-                                                mnemonicsLink.download = mnemonicsFileName;
-                                                document.body.appendChild(mnemonicsLink);
-                                                mnemonicsLink.click();
-                                                document.body.removeChild(mnemonicsLink);
-                                            }
-                                            setStakeResult({ 
-                                                success: true, 
-                                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
-                                                fileUrl, 
-                                                fileName, 
-                                                sessionId, 
-                                                details, 
-                                                stakeFiles: jsonResponse.stakeFiles || [],
-                                                mnemonicsData: jsonResponse.mnemonicsData,
-                                                mnemonicsUrl,
-                                                mnemonicsFileName
-                                            });
-                                        } else if (jsonResponse.fileUrl && jsonResponse.fileName) {
-                                            setStakeResult({ 
-                                                success: true, 
-                                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
-                                                fileUrl: jsonResponse.fileUrl, 
-                                                fileName: jsonResponse.fileName, 
-                                                sessionId, 
-                                                details, 
-                                                stakeFiles: jsonResponse.stakeFiles || [],
-                                                mnemonicsData: jsonResponse.mnemonicsData,
-                                                mnemonicsUrl: jsonResponse.mnemonicsUrl,
-                                                mnemonicsFileName: jsonResponse.mnemonicsFileName
-                                            });
-                                        } else {
-                                            setStakeResult({ 
-                                                success: true, 
-                                                message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
-                                                sessionId, 
-                                                details, 
-                                                stakeFiles: jsonResponse.stakeFiles || [],
-                                                mnemonicsData: jsonResponse.mnemonicsData,
-                                                mnemonicsUrl: jsonResponse.mnemonicsUrl,
-                                                mnemonicsFileName: jsonResponse.mnemonicsFileName
-                                            });
-                                        }
-                                    } else {
-                                        DEBUG_CONFIG.log('[STAKE] No JSON response and not ZIP - unexpected response type');
-                                        setStakeResult({ 
-                                            success: false, 
-                                            message: 'Unexpected response format from server' 
-                                        });
-                                    }
-                                }
-                            } else {
-                                const result = await response.json().catch(() => ({}));
-                                DEBUG_CONFIG.log('[STAKE] Error response:', result);
-                                setStakeResult({ success: false, message: result.error || 'Failed to create stake files' });
-                            }
-                        } catch (error: any) {
-                            DEBUG_CONFIG.error('[STAKE] Network error:', error);
-                            setStakeResult({ success: false, message: 'Network error: ' + (error.message || error) });
-                        }
+                        // Show confirmation dialog first
+                        setPendingStakeNodes(nodes);
+                        setShowStakeConfirmation(true);
                     }}
                 />
+            )}
+            {/* Stake Confirmation Dialog */}
+            {showStakeConfirmation && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+                    <div className="bg-gray-900 rounded-xl p-8 border-2 border-yellow-500/50 shadow-xl max-w-md w-full mx-4">
+                        <h3 className="text-xl font-bold mb-4 text-yellow-400 flex items-center">
+                            <i className="fas fa-exclamation-triangle mr-2"></i>
+                            Confirm Staking
+                        </h3>
+                        <div className="mb-6">
+                            <p className="text-gray-300 mb-3">
+                                You're about to stake <span className="font-bold text-blue-400">{pendingStakeNodes}</span> node{pendingStakeNodes !== 1 ? 's' : ''}.
+                            </p>
+                            <p className="text-gray-300 mb-3">
+                                Amount: <span className="font-bold text-green-400">{(pendingStakeNodes * 60005).toLocaleString()} POKT</span>
+                            </p>
+                            <p className="text-yellow-300 text-sm">
+                                Are you sure you want to proceed with this action?
+                            </p>
+                        </div>
+                        <div className="flex justify-center gap-4">
+                            <button
+                                className="px-6 py-2 rounded-lg bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white font-semibold transition-all duration-200"
+                                onClick={async () => {
+                                    setShowStakeConfirmation(false);
+                                    setShowStakeDialog(false);
+                                    await handleActualStaking(pendingStakeNodes);
+                                }}
+                            >
+                                Yes, Stake {pendingStakeNodes} Node{pendingStakeNodes !== 1 ? 's' : ''}
+                            </button>
+                            <button
+                                className="px-6 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 font-semibold transition-all duration-200"
+                                onClick={() => {
+                                    setShowStakeConfirmation(false);
+                                    setPendingStakeNodes(0);
+                                }}
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
             {/* Stake Result Modal */}
             {stakeResult && (
                 <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
                     <div className="bg-gray-900 rounded-xl p-8 border-2 border-gray-700 shadow-xl max-w-2xl w-full text-center max-h-[90vh] overflow-y-auto">
-                        <h2 className={`text-2xl font-bold mb-4 ${stakeResult.success ? 'text-green-400' : 'text-red-400'}`}>{stakeResult.success ? '' : 'Stake Failed'}</h2>
+                        <h2 className={`text-2xl font-bold mb-4 ${stakeResult!.success ? 'text-green-400' : 'text-red-400'}`}>{stakeResult!.success ? '' : 'Stake Failed'}</h2>
                         {/* Only show the generated message and download button if success */}
-                        {stakeResult.success && (
+                        {stakeResult!.success && (
                             <div className="mb-4">
                                 <div className="text-green-400 font-semibold mb-2">stake config files were generated!</div>
                                 {/* If a ZIP is available, show a single download button */}
-                                {stakeResult.fileUrl && stakeResult.fileName && (
+                                {stakeResult!.fileUrl && stakeResult!.fileName && (
                                     <a
-                                        href={stakeResult.fileUrl}
-                                        download={stakeResult.fileName}
+                                        href={stakeResult!.fileUrl}
+                                        download={stakeResult!.fileName}
                                         className="inline-block px-6 py-2 rounded-lg bg-gradient-to-r from-pink-500 to-red-600 text-white font-semibold shadow-lg hover:from-pink-600 hover:to-red-700"
                                     >
                                         Download All Stake Files (ZIP)
                                     </a>
                                 )}
                                 {/* If multiple files are available as an array, show download links for each */}
-                                {stakeResult.stakeFiles && Array.isArray(stakeResult.stakeFiles) && stakeResult.stakeFiles.length > 1 && !stakeResult.fileUrl && (
+                                {stakeResult!.stakeFiles && Array.isArray(stakeResult!.stakeFiles) && stakeResult!.stakeFiles.length > 1 && !stakeResult!.fileUrl && (
                                     <div className="flex flex-col gap-2 mt-2">
-                                        {stakeResult.stakeFiles.map((file: any, idx: number) => (
+                                        {stakeResult!.stakeFiles.map((file: any, idx: number) => (
                                             <a
                                                 key={file.fileName || idx}
                                                 href={`data:text/yaml;charset=utf-8,${encodeURIComponent(file.content)}`}
@@ -1200,26 +1251,26 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                         )}
                         
                         {/* Details Section */}
-                        {stakeResult.details && (
+                        {stakeResult!.details && (
                             <div className="mb-4 text-left text-sm bg-gray-800/60 rounded-lg p-4">
-                                <div className="mb-2"><span className="font-semibold text-gray-200">Owner Address:</span> <span className="font-mono text-blue-300">{stakeResult.details.ownerAddress}</span></div>
-                                {stakeResult.details.operator && <div className="mb-2"><span className="font-semibold text-gray-200">Operator:</span> <span className="font-mono text-pink-300">{stakeResult.details.operator}</span></div>}
-                                {stakeResult.details.amount && <div className="mb-2"><span className="font-semibold text-gray-200">Amount:</span> <span className="font-mono text-green-300">{stakeResult.details.amount.toLocaleString()} POKT</span></div>}
-                                {stakeResult.details.revShare && <div className="mb-2"><span className="font-semibold text-gray-200">Rev Share:</span> <span className="font-mono text-yellow-300">{stakeResult.details.revShare}</span></div>}
-                                {stakeResult.details.services && Array.isArray(stakeResult.details.services) && (
-                                    <div className="mb-2"><span className="font-semibold text-gray-200">Services:</span> <span className="font-mono text-purple-300">{stakeResult.details.services.join(', ')}</span></div>
+                                <div className="mb-2"><span className="font-semibold text-gray-200">Owner Address:</span> <span className="font-mono text-blue-300">{stakeResult!.details.ownerAddress}</span></div>
+                                {stakeResult!.details.operator && <div className="mb-2"><span className="font-semibold text-gray-200">Operator:</span> <span className="font-mono text-pink-300">{stakeResult!.details.operator}</span></div>}
+                                {stakeResult!.details.amount && <div className="mb-2"><span className="font-semibold text-gray-200">Amount:</span> <span className="font-mono text-green-300">{stakeResult!.details.amount.toLocaleString()} POKT</span></div>}
+                                {stakeResult!.details.revShare && <div className="mb-2"><span className="font-semibold text-gray-200">Rev Share:</span> <span className="font-mono text-yellow-300">{stakeResult!.details.revShare}</span></div>}
+                                {stakeResult!.details.services && Array.isArray(stakeResult!.details.services) && (
+                                    <div className="mb-2"><span className="font-semibold text-gray-200">Services:</span> <span className="font-mono text-purple-300">{stakeResult!.details.services.join(', ')}</span></div>
                                 )}
                             </div>
                         )}
                         
                         {/* Show success message and download button if available, only once */}
-                        {stakeResult.success && (
+                        {stakeResult!.success && (
                             <div className="mb-4">
                                 <div className="text-green-400 font-semibold mb-2">stake config files were generated!</div>
-                                {stakeResult.fileUrl && stakeResult.fileName && (
+                                {stakeResult!.fileUrl && stakeResult!.fileName && (
                                     <a
-                                        href={stakeResult.fileUrl}
-                                        download={stakeResult.fileName}
+                                        href={stakeResult!.fileUrl}
+                                        download={stakeResult!.fileName}
                                         className="inline-block px-6 py-2 rounded-lg bg-gradient-to-r from-pink-500 to-red-600 text-white font-semibold shadow-lg hover:from-pink-600 hover:to-red-700"
                                     >
                                         Download Stake File
@@ -1229,7 +1280,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                         )}
                         
                         {/* Execute Stake Transactions - Always show if sessionId exists */}
-                        {stakeResult.sessionId && (
+                        {stakeResult!.sessionId && (
                             <div className="mb-4 p-4 bg-gray-800/40 rounded-lg border border-gray-700">
                                 <h3 className="text-lg font-semibold text-gray-200 mb-3">Execute POKT CLI</h3>
                                 <p className="text-sm text-gray-400 mb-3">Execute POKT CLI commands directly from the frontend. The backend will handle the CLI execution with your wallet.</p>
@@ -1252,10 +1303,10 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                 setExecuteLoading(true);
                                                 setExecuteError(null);
                                                 try {
-                                                    DEBUG_CONFIG.log('[STAKE] Executing POKT CLI stake directly for sessionId:', stakeResult.sessionId);
+                                                    DEBUG_CONFIG.log('[STAKE] Executing POKT CLI stake directly for sessionId:', stakeResult!.sessionId);
                                                     
                                                     // Step 1: Get the stake file content from the backend
-                                                    const generateResponse = await fetch(`${backendUrl}/api/stake/generate-cli/${stakeResult.sessionId}`, {
+                                                    const generateResponse = await fetch(`${backendUrl}/api/stake/generate-cli/${stakeResult!.sessionId}`, {
                                                         method: 'POST',
                                                         headers: { 'Content-Type': 'application/json' },
                                                         body: JSON.stringify({
@@ -1292,7 +1343,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                         }
                                                         return {
                                                             content: file.stakeFileContent,
-                                                            fileName: file.fileName || `stake_file_${stakeResult.sessionId}_${idx + 1}.yaml`
+                                                            fileName: file.fileName || `stake_file_${stakeResult!.sessionId}_${idx + 1}.yaml`
                                                         };
                                                     });
                                                     DEBUG_CONFIG.log('[STAKE] Executing POKT CLI with all stake files:', stakeFilesPayload);
@@ -1488,7 +1539,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                 
                                                                 // Extract mnemonics and wallet info from the response
                                                                 const transactions = executeData?.result?.data?.data?.transactions || [];
-                                                                sessionId = executeData?.sessionId || executeData?.result?.data?.data?.sessionId || stakeResult?.sessionId || '';
+                                                                const currentSessionId = executeData?.sessionId || executeData?.result?.data?.data?.sessionId || stakeResult?.sessionId || '';
                                                                 const ownerAddressResp = executeData?.ownerAddress || executeData?.result?.ownerAddress || walletAddress || '';
                                                                 const createdAt = new Date().toISOString();
                                                                 const fileUrl = stakeResult?.fileUrl || '';
@@ -1496,6 +1547,16 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                 const details = stakeResult?.details || {};
                                                                 const nodes = transactions.length;
                                                                 const stakeFiles = stakeResult?.stakeFiles || [];
+                                                                
+                                                                DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Extracted data:', {
+                                                                    transactions,
+                                                                    transactionsLength: transactions.length,
+                                                                    currentSessionId,
+                                                                    ownerAddressResp,
+                                                                    nodes,
+                                                                    hasTransactions: transactions.length > 0
+                                                                });
+                                                                
                                                                 const wallets = transactions.map((tx: any, idx: number) => ({
                                                                   nodeNumber: idx + 1,
                                                                   walletName: tx.keyName || `node_${idx + 1}`,
@@ -1504,9 +1565,22 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                   stakeFile: tx.stakeFile,
                                                                   homePath: tx.homeDir,
                                                                 }));
+                                                                
+                                                                DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Generated wallets:', {
+                                                                    wallets,
+                                                                    walletsLength: wallets.length,
+                                                                    hasWalletsWithMnemonics: wallets.some((w: any) => w.mnemonic),
+                                                                    mnemonicsPreview: wallets.map((w: any, i: number) => ({
+                                                                        index: i,
+                                                                        hasMnemonic: !!w.mnemonic,
+                                                                        mnemonicLength: w.mnemonic ? w.mnemonic.length : 0,
+                                                                        mnemonicPreview: w.mnemonic ? `${w.mnemonic.substring(0, 20)}...` : 'No mnemonic'
+                                                                    }))
+                                                                });
+                                                                
                                                                 if (wallets.length > 0 && wallets.some((w: any) => w.mnemonic)) {
                                                                   const mnemonicsData = {
-                                                                    sessionId,
+                                                                    sessionId: currentSessionId,
                                                                     createdAt,
                                                                     ownerAddress: ownerAddressResp,
                                                                     numberOfNodes: wallets.length,
@@ -1515,14 +1589,21 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                     downloadInstructions: "Store this file securely. It contains your node wallet mnemonics.",
                                                                     securityWarning: "Keep this file secure and private. If you lose it, you cannot recover your node wallets."
                                                                   };
+                                                                  
+                                                                  DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Final mnemonicsData:', {
+                                                                    mnemonicsData,
+                                                                    hasValidMnemonicsData: !!mnemonicsData,
+                                                                    walletsInMnemonicsData: mnemonicsData.wallets.length
+                                                                  });
+                                                                  
                                                                   const mnemonicsJson = JSON.stringify(mnemonicsData, null, 2);
                                                                   const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
-                                                                  mnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
-                                                                  mnemonicsFileName = `wallet_mnemonics_${sessionId || Date.now()}.json`;
+                                                                  const currentMnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                                                  const currentMnemonicsFileName = `wallet_mnemonics_${currentSessionId || Date.now()}.json`;
                                                                   // Auto-download
                                                                   const link = document.createElement('a');
-                                                                  link.href = mnemonicsUrl;
-                                                                  link.download = mnemonicsFileName;
+                                                                  link.href = currentMnemonicsUrl;
+                                                                  link.download = currentMnemonicsFileName;
                                                                   document.body.appendChild(link);
                                                                   link.click();
                                                                   document.body.removeChild(link);
@@ -1533,14 +1614,22 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                     message: executeData.message || `Successfully created ${nodes} stake file(s)!`,
                                                                     fileUrl: fileUrl,
                                                                     fileName: fileName,
-                                                                    sessionId: sessionId,
+                                                                    sessionId: currentSessionId,
                                                                     details: details,
                                                                     stakeFiles: stakeFiles,
                                                                     mnemonicsData: mnemonicsData,
-                                                                    mnemonicsUrl: mnemonicsUrl,
-                                                                    mnemonicsFileName: mnemonicsFileName
+                                                                    mnemonicsUrl: currentMnemonicsUrl,
+                                                                    mnemonicsFileName: currentMnemonicsFileName
                                                                   }));
+                                                                  
+                                                                  DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Updated stakeResult with mnemonicsData');
                                                                   return; // Exit early since we succeeded with fourth format
+                                                                } else {
+                                                                  DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - No wallets with mnemonics found', {
+                                                                    walletsLength: wallets.length,
+                                                                    wallets: wallets,
+                                                                    someHaveMnemonics: wallets.some((w: any) => w.mnemonic)
+                                                                  });
                                                                 }
                                                             }
                                                             
@@ -1551,7 +1640,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                             // Continue with the rest of the success flow...
                                                             const executionSummary = {
                                                                 method: 'pokt-cli-executed',
-                                                                sessionId: stakeResult.sessionId,
+                                                                sessionId: stakeResult!.sessionId,
                                                                 network: executeNetwork,
                                                                 ownerAddress: walletAddress,
                                                                 ownerKeyName: keyName,
@@ -1577,7 +1666,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                         // Continue with the rest of the success flow...
                                                         const executionSummary = {
                                                             method: 'pokt-cli-executed',
-                                                            sessionId: stakeResult.sessionId,
+                                                            sessionId: stakeResult!.sessionId,
                                                             network: executeNetwork,
                                                             ownerAddress: walletAddress,
                                                             ownerKeyName: keyName,
@@ -1599,10 +1688,114 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                     const executeData = await executeResponse.json();
                                                     DEBUG_CONFIG.log('[STAKE] POKT CLI execution response:', executeData);
                                                     
+                                                    // Add debug logging for the actual response structure
+                                                    DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Response structure:', {
+                                                        executeData,
+                                                        hasData: !!executeData.data,
+                                                        dataData: executeData.data?.data,
+                                                        dataKeys: executeData.data ? Object.keys(executeData.data) : 'No data',
+                                                        dataDataKeys: executeData.data?.data ? Object.keys(executeData.data.data) : 'No data.data'
+                                                    });
+                                                    
+                                                    // Try to extract mnemonics from the primary format response
+                                                    if (executeData.success && executeData.data?.data) {
+                                                        const responseData = executeData.data.data;
+                                                        
+                                                        // Look for mnemonics in various possible locations
+                                                        const possibleMnemonics = [
+                                                            responseData.mnemonics,
+                                                            responseData.wallets,
+                                                            responseData.generatedWallets,
+                                                            responseData.nodeWallets,
+                                                            responseData.transactions
+                                                        ].filter(Boolean);
+                                                        
+                                                        DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Looking for mnemonics:', {
+                                                            responseData,
+                                                            possibleMnemonics,
+                                                            hasMnemonics: possibleMnemonics.length > 0
+                                                        });
+                                                        
+                                                        // Since the backend doesn't return node wallet mnemonics yet,
+                                                        // we need to generate them or get them from a different source
+                                                        // For now, we'll generate proper node wallet mnemonics
+                                                        const currentSessionId = stakeResult!.sessionId || `session_${Date.now()}`;
+                                                        const numberOfNodes = responseData.totalFiles || 1;
+                                                        
+                                                        DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Generating node wallets:', {
+                                                            numberOfNodes,
+                                                            currentSessionId,
+                                                            note: 'Backend should return these mnemonics in the future'
+                                                        });
+                                                        
+                                                        // Generate new node wallet mnemonics (temporary solution)
+                                                        const { DirectSecp256k1HdWallet } = await import('@cosmjs/proto-signing');
+                                                        const nodeWallets = [];
+                                                        
+                                                        for (let i = 0; i < numberOfNodes; i++) {
+                                                            try {
+                                                                // Generate a new wallet for each node
+                                                                const nodeWallet = await DirectSecp256k1HdWallet.generate(24, {
+                                                                    prefix: 'pokt' // Use POKT prefix for node wallets
+                                                                });
+                                                                const [account] = await nodeWallet.getAccounts();
+                                                                
+                                                                nodeWallets.push({
+                                                                    nodeNumber: i + 1,
+                                                                    walletName: `node_${i + 1}`,
+                                                                    address: account.address,
+                                                                    mnemonic: nodeWallet.mnemonic,
+                                                                    note: 'Generated for demonstration - Backend should provide these'
+                                                                });
+                                                            } catch (error) {
+                                                                DEBUG_CONFIG.error(`[STAKE] Error generating wallet for node ${i + 1}:`, error);
+                                                            }
+                                                        }
+                                                        
+                                                        DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Generated node wallets:', {
+                                                            nodeWallets: nodeWallets.map(w => ({
+                                                                nodeNumber: w.nodeNumber,
+                                                                address: w.address,
+                                                                hasMnemonic: !!w.mnemonic
+                                                            }))
+                                                        });
+                                                        
+                                                        if (nodeWallets.length > 0) {
+                                                            const mnemonicsData = {
+                                                                sessionId: currentSessionId,
+                                                                createdAt: new Date().toISOString(),
+                                                                ownerAddress: walletAddress,
+                                                                numberOfNodes: nodeWallets.length,
+                                                                totalWallets: nodeWallets.length,
+                                                                wallets: nodeWallets,
+                                                                downloadInstructions: "Store this file securely. It contains your node wallet mnemonics.",
+                                                                securityWarning: "Keep this file secure and private. If you lose it, you cannot recover your node wallets.",
+                                                                note: "These are newly generated node wallets. In the future, the backend will provide the actual node wallet mnemonics created during staking."
+                                                            };
+                                                            
+                                                            const mnemonicsJson = JSON.stringify(mnemonicsData, null, 2);
+                                                            const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
+                                                            const mnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                                            const mnemonicsFileName = `node_wallet_mnemonics_${currentSessionId}.json`;
+                                                            
+                                                            // Update stakeResult with mnemonics data
+                                                            setStakeResult(prev => prev ? { 
+                                                                ...prev, 
+                                                                mnemonicsData: mnemonicsData,
+                                                                mnemonicsUrl: mnemonicsUrl,
+                                                                mnemonicsFileName: mnemonicsFileName
+                                                            } : prev);
+                                                            
+                                                            DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Updated stakeResult with generated node wallet mnemonics');
+                                                        } else {
+                                                            DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - No node wallets could be generated');
+                                                        }
+                                                    }
+                                                    
                                                     // Step 4: Update result with execution details
                                                     const executionSummary = {
                                                         method: 'pokt-cli-executed',
-                                                        sessionId: stakeResult.sessionId,
+                                                        sessionId: stakeResult!.sessionId,
                                                         network: executeNetwork,
                                                         ownerAddress: walletAddress,
                                                         ownerKeyName: keyName,
@@ -1618,7 +1811,6 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                         ...prev, 
                                                         executeResult: executionSummary 
                                                     } : prev);
-                                                    
                                                 } catch (err: any) {
                                                     DEBUG_CONFIG.error('[STAKE] POKT CLI execution error:', err);
                                                     setExecuteError(err.message || 'Error executing POKT CLI commands');
@@ -1633,8 +1825,8 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                             className="px-6 py-2 rounded-lg bg-gradient-to-r from-green-600 to-emerald-600 text-white font-semibold shadow-lg hover:from-green-700 hover:to-emerald-700"
                                             onClick={async () => {
                                                 try {
-                                                    DEBUG_CONFIG.log('[STAKE] Checking status for sessionId:', stakeResult.sessionId);
-                                                    const response = await fetch(`${backendUrl}/api/stake/status/${stakeResult.sessionId}`);
+                                                    DEBUG_CONFIG.log('[STAKE] Checking status for sessionId:', stakeResult!.sessionId);
+                                                    const response = await fetch(`${backendUrl}/api/stake/status/${stakeResult!.sessionId}`);
                                                     const result = await response.json();
                                                     DEBUG_CONFIG.log('[STAKE] Status response:', result);
                                                     setStakeResult(prev => prev ? { ...prev, statusResult: result } : prev);
@@ -1653,25 +1845,134 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                         )}
                         
                         {/* Show status result */}
-                        {stakeResult.statusResult && (
+                        {stakeResult!.statusResult && (
                             <div className="mb-4 text-left text-xs bg-gray-800/60 rounded-lg p-4 max-h-60 overflow-y-auto">
                                 <div className="font-semibold text-blue-400 mb-2">Status Result:</div>
-                                <pre className="whitespace-pre-wrap text-gray-200">{typeof stakeResult.statusResult === 'string' ? stakeResult.statusResult : JSON.stringify(stakeResult.statusResult, null, 2)}</pre>
+                                <pre className="whitespace-pre-wrap text-gray-200">{typeof stakeResult!.statusResult === 'string' ? stakeResult!.statusResult : JSON.stringify(stakeResult!.statusResult, null, 2)}</pre>
                             </div>
                         )}
                         
                         {/* Show warning and download button if mnemonicsData is present */}
                         {stakeResult?.mnemonicsData && (
                             <div className="mb-4">
-                                <div className="text-yellow-400 font-semibold mb-2">Security Warning</div>
-                                <div className="text-yellow-200 text-sm mb-2">This file contains your node wallet mnemonics. Store it securely. If you lose it, you cannot recover your node wallets.</div>
-                                <a
-                                    href={stakeResult.mnemonicsUrl}
-                                    download={stakeResult.mnemonicsFileName}
-                                    className="inline-block px-6 py-2 rounded-lg bg-gradient-to-r from-yellow-500 to-orange-600 text-white font-semibold shadow-lg hover:from-yellow-600 hover:to-orange-700"
-                                >
-                                    Download Wallet Mnemonics JSON
-                                </a>
+                                <div className="text-yellow-400 font-semibold mb-2 flex items-center">
+                                    <i className="fas fa-exclamation-triangle mr-2"></i>
+                                    Node Wallet Mnemonics - CRITICAL SECURITY WARNING
+                                </div>
+                                
+                                <div className="bg-red-900/20 border border-red-800 rounded-lg p-4 mb-4">
+                                    <p className="text-red-300 text-sm mb-2 font-semibold">
+                                        <i className="fas fa-shield-alt mr-2"></i>
+                                        EXTREME CAUTION! These are your node wallet secret phrases.
+                                    </p>
+                                    <ul className="text-red-200 text-xs space-y-1 list-disc pl-5">
+                                        <li>Never share these mnemonics with anyone</li>
+                                        <li>Anyone with these phrases can steal your funds</li>
+                                        <li>Store them securely offline immediately</li>
+                                        <li>Take screenshots only if absolutely necessary</li>
+                                    </ul>
+                                </div>
+
+                                {/* Important Note about generated wallets */}
+                                <div className="bg-blue-900/20 border border-blue-600 rounded-lg p-3 mb-4">
+                                    <p className="text-blue-300 text-sm font-semibold mb-1">
+                                        <i className="fas fa-info-circle mr-2"></i>
+                                        Important Note
+                                    </p>
+                                    <p className="text-blue-200 text-xs">
+                                        These are <strong>newly generated node wallet mnemonics</strong> for demonstration purposes. 
+                                        In the final version, the backend will provide the actual node wallet mnemonics created during the staking process.
+                                    </p>
+                                </div>
+
+                                {/* Display each wallet's mnemonic */}
+                                <div className="space-y-4">
+                                    <div className="text-gray-300 text-sm mb-3">
+                                        <div className="mb-2">
+                                            Session ID: <span className="font-mono text-blue-300">{stakeResult!.mnemonicsData.sessionId}</span>
+                                        </div>
+                                        <div className="mb-2">
+                                            Owner Address: <span className="font-mono text-green-300">{stakeResult!.mnemonicsData.ownerAddress}</span>
+                                        </div>
+                                        <div className="text-sm text-yellow-300">
+                                            <i className="fas fa-server mr-1"></i>
+                                            Node Wallets: {stakeResult!.mnemonicsData.numberOfNodes} wallet{stakeResult!.mnemonicsData.numberOfNodes !== 1 ? 's' : ''} generated
+                                        </div>
+                                    </div>
+                                    
+                                    {stakeResult!.mnemonicsData.wallets && stakeResult!.mnemonicsData.wallets.map((wallet: any, index: number) => (
+                                        <div key={index} className="bg-gray-800/60 border border-gray-700 rounded-lg p-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <h4 className="text-gray-200 font-semibold flex items-center">
+                                                    <i className="fas fa-server text-blue-400 mr-2"></i>
+                                                    Node #{wallet.nodeNumber || index + 1}: {wallet.walletName || `node_${index + 1}`}
+                                                </h4>
+                                                <button
+                                                    onClick={(event) => {
+                                                        if (wallet.mnemonic) {
+                                                            navigator.clipboard.writeText(wallet.mnemonic);
+                                                            // Show a brief feedback
+                                                            const btn = event.target as HTMLButtonElement;
+                                                            const originalText = btn.textContent;
+                                                            btn.textContent = 'Copied!';
+                                                            btn.className = btn.className.replace('from-blue-600', 'from-green-600').replace('to-blue-700', 'to-green-700');
+                                                            setTimeout(() => {
+                                                                if (originalText) btn.textContent = originalText;
+                                                                btn.className = btn.className.replace('from-green-600', 'from-blue-600').replace('to-green-700', 'to-blue-700');
+                                                            }, 2000);
+                                                        }
+                                                    }}
+                                                    className="px-3 py-1 text-xs bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded transition-all duration-200 flex items-center"
+                                                    title="Copy node wallet mnemonic to clipboard"
+                                                >
+                                                    <i className="fas fa-copy mr-1"></i>
+                                                    Copy Mnemonic
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="text-xs text-gray-400 mb-2">
+                                                <span className="inline-block mr-4">
+                                                    <i className="fas fa-wallet mr-1"></i>
+                                                    Address: <span className="font-mono text-blue-300">{wallet.address}</span>
+                                                </span>
+                                                {wallet.note && (
+                                                    <span className="inline-block text-yellow-400">
+                                                        <i className="fas fa-exclamation-circle mr-1"></i>
+                                                        {wallet.note}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            
+                                            {wallet.mnemonic ? (
+                                                <div className="bg-gray-900 border border-gray-600 rounded p-3">
+                                                    <div className="font-mono text-sm text-gray-200 break-all leading-relaxed">
+                                                        {wallet.mnemonic}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-yellow-300 text-sm p-2 bg-yellow-900/20 border border-yellow-800 rounded">
+                                                    <i className="fas fa-exclamation-circle mr-2"></i>
+                                                    No mnemonic available for this node wallet
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* Keep the download option as backup */}
+                                <div className="mt-4 pt-4 border-t border-gray-700">
+                                    <div className="text-gray-400 text-sm mb-2">
+                                        You can also download this information as a JSON file:
+                                    </div>
+                                    <a
+                                        href={stakeResult!.mnemonicsUrl}
+                                        download={stakeResult!.mnemonicsFileName}
+                                        className="inline-block px-4 py-2 rounded-lg bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800 text-white text-sm font-semibold shadow-lg transition-all duration-200"
+                                    >
+                                        <i className="fas fa-download mr-2"></i>
+                                        Download Node Wallets JSON
+                                    </a>
+                                </div>
                             </div>
                         )}
 
