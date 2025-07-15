@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { storageService } from '../controller/storage.service';
 import { StoredWallet } from '../types';
@@ -35,6 +35,26 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
     const [hasMorse, setHasMorse] = useState(false);
     const [showPrivateKey, setShowPrivateKey] = useState<string | null>(null);
     const [privateKeyData, setPrivateKeyData] = useState<string | null>(null);
+    
+    // Ref for click outside functionality
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Handle click outside to close dropdown
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+
+        if (isOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [isOpen]);
 
     // SOLO CARGAR DESDE STORAGE AL INICIO, UNA VEZ
     useEffect(() => {
@@ -263,6 +283,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.2 }}
                     className="absolute right-0 mt-2 w-72 bg-gray-900/95 backdrop-blur-md rounded-xl shadow-lg shadow-black/50 border border-gray-700/50 overflow-hidden z-50"
+                    ref={dropdownRef}
                 >
                     <div className="p-4">
                         {availableNetworks.length > 1 && (

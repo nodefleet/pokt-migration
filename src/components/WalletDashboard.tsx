@@ -12,6 +12,7 @@ import { storageService } from '../controller/storage.service';
 import MigrationDialog from './MigrationDialog';
 import { morseWalletService } from '../controller/MorseWallet';
 import StakeDialog from './StakeDialog';
+import { walletService } from '../controller/WalletService';
 
 interface StoredWallet {
     serialized: string;
@@ -719,6 +720,53 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         return result;
     };
 
+    // Helper function to fetch real mnemonics from the dedicated endpoint
+    const fetchRealMnemonics = async (sessionId: string): Promise<any | null> => {
+        try {
+            DEBUG_CONFIG.log('[STAKE] 🔍 Fetching real mnemonics from dedicated endpoint for sessionId:', sessionId);
+            
+            const response = await fetch(`${backendUrl}/api/stake/download-mnemonics/${sessionId}`);
+            
+            if (!response.ok) {
+                DEBUG_CONFIG.error('[STAKE] Failed to fetch real mnemonics, status:', response.status);
+                return null;
+            }
+            
+            const mnemonicsResponse = await response.json();
+            DEBUG_CONFIG.log('[STAKE] 🎉 Real mnemonics fetched successfully:', {
+                success: mnemonicsResponse.success,
+                message: mnemonicsResponse.message,
+                sessionId: mnemonicsResponse.sessionId,
+                hasData: !!mnemonicsResponse.data,
+                hasWallets: !!(mnemonicsResponse.data && mnemonicsResponse.data.wallets),
+                walletsCount: mnemonicsResponse.data?.wallets?.length || 0,
+                mnemonicsInfo: mnemonicsResponse.mnemonicsInfo
+            });
+            
+            if (mnemonicsResponse.success && mnemonicsResponse.data && mnemonicsResponse.data.wallets) {
+                return {
+                    sessionId: mnemonicsResponse.sessionId,
+                    createdAt: new Date().toISOString(),
+                    ownerAddress: walletAddress,
+                    numberOfNodes: mnemonicsResponse.data.wallets.length,
+                    totalWallets: mnemonicsResponse.data.wallets.length,
+                    wallets: mnemonicsResponse.data.wallets,
+                    downloadInstructions: "Store this file securely. It contains your real node wallet mnemonics.",
+                    securityWarning: "Keep this file secure and private. If you lose it, you cannot recover your node wallets.",
+                    source: "dedicated_mnemonics_endpoint",
+                    mnemonicsInfo: mnemonicsResponse.mnemonicsInfo
+                };
+            }
+            
+            DEBUG_CONFIG.warn('[STAKE] ⚠️ Real mnemonics endpoint returned success but no wallets data');
+            return null;
+            
+        } catch (error) {
+            DEBUG_CONFIG.error('[STAKE] ❌ Error fetching real mnemonics:', error);
+            return null;
+        }
+    };
+
     const containerVariants = {
         hidden: { opacity: 0 },
         visible: {
@@ -767,15 +815,48 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
     // Function to handle the actual staking process after confirmation
     const handleActualStaking = async (nodes: number) => {
+        // CRITICAL FIX: Get the currently selected wallet address from walletService
+        // with fallback to the walletAddress prop
+        let currentWalletAddress = walletService.getCurrentWalletAddress();
+        
+        // If walletService doesn't have a current wallet, use the prop
+        if (!currentWalletAddress && walletAddress) {
+            currentWalletAddress = walletAddress;
+            DEBUG_CONFIG.log('[STAKE] Using walletAddress prop as fallback:', currentWalletAddress);
+        }
+        
+        if (!currentWalletAddress) {
+            throw new Error('No wallet currently selected. Please select a wallet first.');
+        }
+        
+        DEBUG_CONFIG.log('[STAKE] Using wallet address:', currentWalletAddress);
+        DEBUG_CONFIG.log('[STAKE] Wallet source:', walletService.getCurrentWalletAddress() ? 'walletService' : 'props');
+        
+        // GET OWNER WALLET MNEMONIC FOR COMPARISON (DO NOT DISPLAY THIS)
+        let ownerWalletMnemonic: string | null = null;
+        try {
+            const storedWallet = await walletService.getWalletByAddress(currentWalletAddress);
+            if (storedWallet && storedWallet.mnemonic) {
+                ownerWalletMnemonic = storedWallet.mnemonic.toLowerCase().trim();
+            }
+        } catch (error) {
+            DEBUG_CONFIG.warn('[STAKE] Could not get owner wallet mnemonic for comparison:', error);
+        }
+        
+        DEBUG_CONFIG.log('[STAKE] Owner wallet mnemonic obtained for filtering:', {
+            hasOwnerMnemonic: !!ownerWalletMnemonic,
+            ownerMnemonicWordCount: ownerWalletMnemonic ? ownerWalletMnemonic.split(' ').length : 0
+        });
+        
         DEBUG_CONFIG.log('[STAKE] Initiating stake API call', {
             backendUrl,
-            ownerAddress: walletAddress,
+            ownerAddress: currentWalletAddress,
             numberOfNodes: nodes
         });
         DEBUG_CONFIG.log('[STAKE] Stake nodes request payload:', {
             url: `${backendUrl}/api/stake/create`,
             payload: {
-                ownerAddress: walletAddress,
+                ownerAddress: currentWalletAddress,
                 numberOfNodes: nodes
             }
         });
@@ -787,7 +868,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    ownerAddress: walletAddress,
+                    ownerAddress: currentWalletAddress,
                     numberOfNodes: nodes
                 }),
             });
@@ -834,11 +915,15 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                     
                     setStakeResult({ 
                         success: true, 
-                        message: `Successfully created ${nodes} stake file(s)!`, 
+                        message: jsonResponse.message || `Successfully created ${nodes} stake file(s)!`, 
                         fileUrl, 
-                        fileName,
+                        fileName, 
                         sessionId: responseSessionId || undefined,
-                        details: jsonResponse && jsonResponse.details
+                        details: jsonResponse && jsonResponse.details,
+                        stakeFiles: jsonResponse.stakeFiles || [],
+                        mnemonicsData: undefined,
+                        mnemonicsUrl,
+                        mnemonicsFileName
                     });
                 } else {
                     // Handle JSON response
@@ -893,7 +978,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                 sessionId, 
                                 details, 
                                 stakeFiles: jsonResponse.stakeFiles || [],
-                                mnemonicsData: jsonResponse.mnemonicsData,
+                                mnemonicsData: undefined,
                                 mnemonicsUrl,
                                 mnemonicsFileName
                             });
@@ -906,7 +991,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                 sessionId, 
                                 details, 
                                 stakeFiles: jsonResponse.stakeFiles || [],
-                                mnemonicsData: jsonResponse.mnemonicsData,
+                                mnemonicsData: undefined,
                                 mnemonicsUrl: jsonResponse.mnemonicsUrl,
                                 mnemonicsFileName: jsonResponse.mnemonicsFileName
                             });
@@ -1537,69 +1622,26 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                 const executeData = await fourthResponse.json();
                                                                 DEBUG_CONFIG.log('[STAKE] Fourth format succeeded:', executeData);
                                                                 
-                                                                // Extract mnemonics and wallet info from the response
-                                                                const transactions = executeData?.result?.data?.data?.transactions || [];
+                                                                // Extract variables needed for result
                                                                 const currentSessionId = executeData?.sessionId || executeData?.result?.data?.data?.sessionId || stakeResult?.sessionId || '';
-                                                                const ownerAddressResp = executeData?.ownerAddress || executeData?.result?.ownerAddress || walletAddress || '';
-                                                                const createdAt = new Date().toISOString();
                                                                 const fileUrl = stakeResult?.fileUrl || '';
                                                                 const fileName = stakeResult?.fileName || '';
                                                                 const details = stakeResult?.details || {};
-                                                                const nodes = transactions.length;
                                                                 const stakeFiles = stakeResult?.stakeFiles || [];
                                                                 
-                                                                DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Extracted data:', {
-                                                                    transactions,
-                                                                    transactionsLength: transactions.length,
-                                                                    currentSessionId,
-                                                                    ownerAddressResp,
-                                                                    nodes,
-                                                                    hasTransactions: transactions.length > 0
-                                                                });
+                                                                // Fetch real mnemonics from the dedicated endpoint
+                                                                DEBUG_CONFIG.log('[STAKE] FOURTH FORMAT - Fetching real mnemonics after CLI execution...');
+                                                                const realMnemonicsData = await fetchRealMnemonics(currentSessionId);
                                                                 
-                                                                const wallets = transactions.map((tx: any, idx: number) => ({
-                                                                  nodeNumber: idx + 1,
-                                                                  walletName: tx.keyName || `node_${idx + 1}`,
-                                                                  address: tx.walletAddress || tx.operatorAddress,
-                                                                  mnemonic: tx.mnemonic,
-                                                                  stakeFile: tx.stakeFile,
-                                                                  homePath: tx.homeDir,
-                                                                }));
-                                                                
-                                                                DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Generated wallets:', {
-                                                                    wallets,
-                                                                    walletsLength: wallets.length,
-                                                                    hasWalletsWithMnemonics: wallets.some((w: any) => w.mnemonic),
-                                                                    mnemonicsPreview: wallets.map((w: any, i: number) => ({
-                                                                        index: i,
-                                                                        hasMnemonic: !!w.mnemonic,
-                                                                        mnemonicLength: w.mnemonic ? w.mnemonic.length : 0,
-                                                                        mnemonicPreview: w.mnemonic ? `${w.mnemonic.substring(0, 20)}...` : 'No mnemonic'
-                                                                    }))
-                                                                });
-                                                                
-                                                                if (wallets.length > 0 && wallets.some((w: any) => w.mnemonic)) {
-                                                                  const mnemonicsData = {
-                                                                    sessionId: currentSessionId,
-                                                                    createdAt,
-                                                                    ownerAddress: ownerAddressResp,
-                                                                    numberOfNodes: wallets.length,
-                                                                    totalWallets: wallets.length,
-                                                                    wallets,
-                                                                    downloadInstructions: "Store this file securely. It contains your node wallet mnemonics.",
-                                                                    securityWarning: "Keep this file secure and private. If you lose it, you cannot recover your node wallets."
-                                                                  };
+                                                                if (realMnemonicsData) {
+                                                                  DEBUG_CONFIG.log('[STAKE] FOURTH FORMAT - Real mnemonics fetched successfully');
                                                                   
-                                                                  DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Final mnemonicsData:', {
-                                                                    mnemonicsData,
-                                                                    hasValidMnemonicsData: !!mnemonicsData,
-                                                                    walletsInMnemonicsData: mnemonicsData.wallets.length
-                                                                  });
-                                                                  
-                                                                  const mnemonicsJson = JSON.stringify(mnemonicsData, null, 2);
+                                                                  // Auto-download the real mnemonics
+                                                                  const mnemonicsJson = JSON.stringify(realMnemonicsData, null, 2);
                                                                   const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
                                                                   const currentMnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
-                                                                  const currentMnemonicsFileName = `wallet_mnemonics_${currentSessionId || Date.now()}.json`;
+                                                                  const currentMnemonicsFileName = `real_operator_mnemonics_${currentSessionId || Date.now()}.json`;
+                                                                  
                                                                   // Auto-download
                                                                   const link = document.createElement('a');
                                                                   link.href = currentMnemonicsUrl;
@@ -1607,55 +1649,106 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                                   document.body.appendChild(link);
                                                                   link.click();
                                                                   document.body.removeChild(link);
-                                                                  // Save to stakeResult for manual download option
+                                                                  
+                                                                  // Save to stakeResult with real mnemonics
                                                                   setStakeResult(prev => ({
                                                                     ...(prev || {}),
                                                                     success: true,
-                                                                    message: executeData.message || `Successfully created ${nodes} stake file(s)!`,
+                                                                    message: executeData.message || `✅ Successfully executed CLI and downloaded real operator mnemonics!`,
                                                                     fileUrl: fileUrl,
                                                                     fileName: fileName,
                                                                     sessionId: currentSessionId,
                                                                     details: details,
                                                                     stakeFiles: stakeFiles,
-                                                                    mnemonicsData: mnemonicsData,
+                                                                    mnemonicsData: realMnemonicsData,
                                                                     mnemonicsUrl: currentMnemonicsUrl,
                                                                     mnemonicsFileName: currentMnemonicsFileName
                                                                   }));
                                                                   
-                                                                  DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - Updated stakeResult with mnemonicsData');
-                                                                  return; // Exit early since we succeeded with fourth format
+                                                                  DEBUG_CONFIG.log('[STAKE] FOURTH FORMAT - Updated stakeResult with real mnemonics');
                                                                 } else {
-                                                                  DEBUG_CONFIG.log('[STAKE] MNEMONICS DEBUG - No wallets with mnemonics found', {
-                                                                    walletsLength: wallets.length,
-                                                                    wallets: wallets,
-                                                                    someHaveMnemonics: wallets.some((w: any) => w.mnemonic)
-                                                                  });
+                                                                  DEBUG_CONFIG.warn('[STAKE] FOURTH FORMAT - Could not fetch real mnemonics, proceeding without them');
+                                                                  
+                                                                  // Save to stakeResult without mnemonics
+                                                                  setStakeResult(prev => ({
+                                                                    ...(prev || {}),
+                                                                    success: true,
+                                                                    message: executeData.message || `✅ Successfully executed CLI! Real operator mnemonics will be available after processing.`,
+                                                                    fileUrl: fileUrl,
+                                                                    fileName: fileName,
+                                                                    sessionId: currentSessionId,
+                                                                    details: details,
+                                                                    stakeFiles: stakeFiles
+                                                                  }));
                                                                 }
+                                                                
+                                                                return; // Exit early since we succeeded with fourth format
                                                             }
                                                             
                                                             // Use the third response
                                                             const executeData = await thirdResponse.json();
                                                             DEBUG_CONFIG.log('[STAKE] Third format succeeded:', executeData);
                                                             
-                                                            // Continue with the rest of the success flow...
-                                                            const executionSummary = {
-                                                                method: 'pokt-cli-executed',
-                                                                sessionId: stakeResult!.sessionId,
-                                                                network: executeNetwork,
-                                                                ownerAddress: walletAddress,
-                                                                ownerKeyName: keyName,
-                                                                keyringBackend: 'test',
-                                                                stakeFileContent: (stakeFilesPayload[0]?.stakeFileContent || stakeFilesPayload[0]?.content || '').substring(0, 200) + '...',
-                                                                result: executeData,
-                                                                executed: true,
-                                                                formatUsed: 'third'
-                                                            };
+                                                            // Extract variables needed for result
+                                                            const currentSessionId = executeData?.sessionId || executeData?.result?.data?.data?.sessionId || stakeResult?.sessionId || '';
+                                                            const fileUrl = stakeResult?.fileUrl || '';
+                                                            const fileName = stakeResult?.fileName || '';
+                                                            const details = stakeResult?.details || {};
+                                                            const stakeFiles = stakeResult?.stakeFiles || [];
                                                             
-                                                            DEBUG_CONFIG.log('[STAKE] POKT CLI execution completed successfully with third format:', executionSummary);
-                                                            setStakeResult(prev => prev ? { 
-                                                                ...prev, 
-                                                                executeResult: executionSummary 
-                                                            } : prev);
+                                                            // Fetch real mnemonics from the dedicated endpoint
+                                                            DEBUG_CONFIG.log('[STAKE] THIRD FORMAT - Fetching real mnemonics after CLI execution...');
+                                                            const realMnemonicsData = await fetchRealMnemonics(currentSessionId);
+                                                            
+                                                            if (realMnemonicsData) {
+                                                              DEBUG_CONFIG.log('[STAKE] THIRD FORMAT - Real mnemonics fetched successfully');
+                                                              
+                                                              // Auto-download the real mnemonics
+                                                              const mnemonicsJson = JSON.stringify(realMnemonicsData, null, 2);
+                                                              const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
+                                                              const currentMnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                                              const currentMnemonicsFileName = `real_operator_mnemonics_${currentSessionId || Date.now()}.json`;
+                                                              
+                                                              // Auto-download
+                                                              const link = document.createElement('a');
+                                                              link.href = currentMnemonicsUrl;
+                                                              link.download = currentMnemonicsFileName;
+                                                              document.body.appendChild(link);
+                                                              link.click();
+                                                              document.body.removeChild(link);
+                                                              
+                                                              // Save to stakeResult with real mnemonics
+                                                              setStakeResult(prev => ({
+                                                                ...(prev || {}),
+                                                                success: true,
+                                                                message: executeData.message || `✅ Successfully executed CLI and downloaded real operator mnemonics!`,
+                                                                fileUrl: fileUrl,
+                                                                fileName: fileName,
+                                                                sessionId: currentSessionId,
+                                                                details: details,
+                                                                stakeFiles: stakeFiles,
+                                                                mnemonicsData: realMnemonicsData,
+                                                                mnemonicsUrl: currentMnemonicsUrl,
+                                                                mnemonicsFileName: currentMnemonicsFileName
+                                                              }));
+                                                              
+                                                              DEBUG_CONFIG.log('[STAKE] THIRD FORMAT - Updated stakeResult with real mnemonics');
+                                                            } else {
+                                                              DEBUG_CONFIG.warn('[STAKE] THIRD FORMAT - Could not fetch real mnemonics, proceeding without them');
+                                                              
+                                                              // Save to stakeResult without mnemonics
+                                                              setStakeResult(prev => ({
+                                                                ...(prev || {}),
+                                                                success: true,
+                                                                message: executeData.message || `✅ Successfully executed CLI! Real operator mnemonics will be available after processing.`,
+                                                                fileUrl: fileUrl,
+                                                                fileName: fileName,
+                                                                sessionId: currentSessionId,
+                                                                details: details,
+                                                                stakeFiles: stakeFiles
+                                                              }));
+                                                            }
+                                                            
                                                             return; // Exit early since we succeeded with third format
                                                         }
                                                         
@@ -1663,25 +1756,66 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                         const executeData = await alternativeResponse.json();
                                                         DEBUG_CONFIG.log('[STAKE] Alternative format succeeded:', executeData);
                                                         
-                                                        // Continue with the rest of the success flow...
-                                                        const executionSummary = {
-                                                            method: 'pokt-cli-executed',
-                                                            sessionId: stakeResult!.sessionId,
-                                                            network: executeNetwork,
-                                                            ownerAddress: walletAddress,
-                                                            ownerKeyName: keyName,
-                                                            keyringBackend: 'test',
-                                                            stakeFileContent: (stakeFilesPayload[0]?.stakeFileContent || stakeFilesPayload[0]?.content || '').substring(0, 200) + '...',
-                                                            result: executeData,
-                                                            executed: true,
-                                                            formatUsed: 'alternative'
-                                                        };
+                                                        // Extract variables needed for result
+                                                        const currentSessionId = executeData?.sessionId || executeData?.result?.data?.data?.sessionId || stakeResult?.sessionId || '';
+                                                        const fileUrl = stakeResult?.fileUrl || '';
+                                                        const fileName = stakeResult?.fileName || '';
+                                                        const details = stakeResult?.details || {};
+                                                        const stakeFiles = stakeResult?.stakeFiles || [];
                                                         
-                                                        DEBUG_CONFIG.log('[STAKE] POKT CLI execution completed successfully with alternative format:', executionSummary);
-                                                        setStakeResult(prev => prev ? { 
-                                                            ...prev, 
-                                                            executeResult: executionSummary 
-                                                        } : prev);
+                                                        // Fetch real mnemonics from the dedicated endpoint
+                                                        DEBUG_CONFIG.log('[STAKE] ALTERNATIVE FORMAT - Fetching real mnemonics after CLI execution...');
+                                                        const realMnemonicsData = await fetchRealMnemonics(currentSessionId);
+                                                        
+                                                        if (realMnemonicsData) {
+                                                          DEBUG_CONFIG.log('[STAKE] ALTERNATIVE FORMAT - Real mnemonics fetched successfully');
+                                                          
+                                                          // Auto-download the real mnemonics
+                                                          const mnemonicsJson = JSON.stringify(realMnemonicsData, null, 2);
+                                                          const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
+                                                          const currentMnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                                          const currentMnemonicsFileName = `real_operator_mnemonics_${currentSessionId || Date.now()}.json`;
+                                                          
+                                                          // Auto-download
+                                                          const link = document.createElement('a');
+                                                          link.href = currentMnemonicsUrl;
+                                                          link.download = currentMnemonicsFileName;
+                                                          document.body.appendChild(link);
+                                                          link.click();
+                                                          document.body.removeChild(link);
+                                                          
+                                                          // Save to stakeResult with real mnemonics
+                                                          setStakeResult(prev => ({
+                                                            ...(prev || {}),
+                                                            success: true,
+                                                            message: executeData.message || `✅ Successfully executed CLI and downloaded real operator mnemonics!`,
+                                                            fileUrl: fileUrl,
+                                                            fileName: fileName,
+                                                            sessionId: currentSessionId,
+                                                            details: details,
+                                                            stakeFiles: stakeFiles,
+                                                            mnemonicsData: realMnemonicsData,
+                                                            mnemonicsUrl: currentMnemonicsUrl,
+                                                            mnemonicsFileName: currentMnemonicsFileName
+                                                          }));
+                                                          
+                                                          DEBUG_CONFIG.log('[STAKE] ALTERNATIVE FORMAT - Updated stakeResult with real mnemonics');
+                                                        } else {
+                                                          DEBUG_CONFIG.warn('[STAKE] ALTERNATIVE FORMAT - Could not fetch real mnemonics, proceeding without them');
+                                                          
+                                                          // Save to stakeResult without mnemonics
+                                                          setStakeResult(prev => ({
+                                                            ...(prev || {}),
+                                                            success: true,
+                                                            message: executeData.message || `✅ Successfully executed CLI! Real operator mnemonics will be available after processing.`,
+                                                            fileUrl: fileUrl,
+                                                            fileName: fileName,
+                                                            sessionId: currentSessionId,
+                                                            details: details,
+                                                            stakeFiles: stakeFiles
+                                                          }));
+                                                        }
+                                                        
                                                         return; // Exit early since we succeeded with alternative format
                                                     }
                                                     
@@ -1701,94 +1835,64 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                                     if (executeData.success && executeData.data?.data) {
                                                         const responseData = executeData.data.data;
                                                         
-                                                        // Look for mnemonics in various possible locations
-                                                        const possibleMnemonics = [
-                                                            responseData.mnemonics,
-                                                            responseData.wallets,
-                                                            responseData.generatedWallets,
-                                                            responseData.nodeWallets,
-                                                            responseData.transactions
-                                                        ].filter(Boolean);
+                                                        // Extract variables needed for result
+                                                        const currentSessionId = executeData?.sessionId || executeData?.result?.data?.data?.sessionId || stakeResult?.sessionId || '';
+                                                        const fileUrl = stakeResult?.fileUrl || '';
+                                                        const fileName = stakeResult?.fileName || '';
+                                                        const details = stakeResult?.details || {};
+                                                        const stakeFiles = stakeResult?.stakeFiles || [];
                                                         
-                                                        DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Looking for mnemonics:', {
-                                                            responseData,
-                                                            possibleMnemonics,
-                                                            hasMnemonics: possibleMnemonics.length > 0
-                                                        });
+                                                        // Fetch real mnemonics from the dedicated endpoint
+                                                        DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Fetching real mnemonics after CLI execution...');
+                                                        const realMnemonicsData = await fetchRealMnemonics(currentSessionId);
                                                         
-                                                        // Since the backend doesn't return node wallet mnemonics yet,
-                                                        // we need to generate them or get them from a different source
-                                                        // For now, we'll generate proper node wallet mnemonics
-                                                        const currentSessionId = stakeResult!.sessionId || `session_${Date.now()}`;
-                                                        const numberOfNodes = responseData.totalFiles || 1;
-                                                        
-                                                        DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Generating node wallets:', {
-                                                            numberOfNodes,
-                                                            currentSessionId,
-                                                            note: 'Backend should return these mnemonics in the future'
-                                                        });
-                                                        
-                                                        // Generate new node wallet mnemonics (temporary solution)
-                                                        const { DirectSecp256k1HdWallet } = await import('@cosmjs/proto-signing');
-                                                        const nodeWallets = [];
-                                                        
-                                                        for (let i = 0; i < numberOfNodes; i++) {
-                                                            try {
-                                                                // Generate a new wallet for each node
-                                                                const nodeWallet = await DirectSecp256k1HdWallet.generate(24, {
-                                                                    prefix: 'pokt' // Use POKT prefix for node wallets
-                                                                });
-                                                                const [account] = await nodeWallet.getAccounts();
-                                                                
-                                                                nodeWallets.push({
-                                                                    nodeNumber: i + 1,
-                                                                    walletName: `node_${i + 1}`,
-                                                                    address: account.address,
-                                                                    mnemonic: nodeWallet.mnemonic,
-                                                                    note: 'Generated for demonstration - Backend should provide these'
-                                                                });
-                                                            } catch (error) {
-                                                                DEBUG_CONFIG.error(`[STAKE] Error generating wallet for node ${i + 1}:`, error);
-                                                            }
-                                                        }
-                                                        
-                                                        DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Generated node wallets:', {
-                                                            nodeWallets: nodeWallets.map(w => ({
-                                                                nodeNumber: w.nodeNumber,
-                                                                address: w.address,
-                                                                hasMnemonic: !!w.mnemonic
-                                                            }))
-                                                        });
-                                                        
-                                                        if (nodeWallets.length > 0) {
-                                                            const mnemonicsData = {
-                                                                sessionId: currentSessionId,
-                                                                createdAt: new Date().toISOString(),
-                                                                ownerAddress: walletAddress,
-                                                                numberOfNodes: nodeWallets.length,
-                                                                totalWallets: nodeWallets.length,
-                                                                wallets: nodeWallets,
-                                                                downloadInstructions: "Store this file securely. It contains your node wallet mnemonics.",
-                                                                securityWarning: "Keep this file secure and private. If you lose it, you cannot recover your node wallets.",
-                                                                note: "These are newly generated node wallets. In the future, the backend will provide the actual node wallet mnemonics created during staking."
-                                                            };
-                                                            
-                                                            const mnemonicsJson = JSON.stringify(mnemonicsData, null, 2);
-                                                            const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
-                                                            const mnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
-                                                            const mnemonicsFileName = `node_wallet_mnemonics_${currentSessionId}.json`;
-                                                            
-                                                            // Update stakeResult with mnemonics data
-                                                            setStakeResult(prev => prev ? { 
-                                                                ...prev, 
-                                                                mnemonicsData: mnemonicsData,
-                                                                mnemonicsUrl: mnemonicsUrl,
-                                                                mnemonicsFileName: mnemonicsFileName
-                                                            } : prev);
-                                                            
-                                                            DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Updated stakeResult with generated node wallet mnemonics');
+                                                        if (realMnemonicsData) {
+                                                          DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Real mnemonics fetched successfully');
+                                                          
+                                                          // Auto-download the real mnemonics
+                                                          const mnemonicsJson = JSON.stringify(realMnemonicsData, null, 2);
+                                                          const mnemonicsBlob = new Blob([mnemonicsJson], { type: 'application/json' });
+                                                          const currentMnemonicsUrl = URL.createObjectURL(mnemonicsBlob);
+                                                          const currentMnemonicsFileName = `real_operator_mnemonics_${currentSessionId || Date.now()}.json`;
+                                                          
+                                                          // Auto-download
+                                                          const link = document.createElement('a');
+                                                          link.href = currentMnemonicsUrl;
+                                                          link.download = currentMnemonicsFileName;
+                                                          document.body.appendChild(link);
+                                                          link.click();
+                                                          document.body.removeChild(link);
+                                                          
+                                                          // Save to stakeResult with real mnemonics
+                                                          setStakeResult(prev => ({
+                                                            ...(prev || {}),
+                                                            success: true,
+                                                            message: executeData.message || `✅ Successfully executed CLI and downloaded real operator mnemonics!`,
+                                                            fileUrl: fileUrl,
+                                                            fileName: fileName,
+                                                            sessionId: currentSessionId,
+                                                            details: details,
+                                                            stakeFiles: stakeFiles,
+                                                            mnemonicsData: realMnemonicsData,
+                                                            mnemonicsUrl: currentMnemonicsUrl,
+                                                            mnemonicsFileName: currentMnemonicsFileName
+                                                          }));
+                                                          
+                                                          DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - Updated stakeResult with real mnemonics');
                                                         } else {
-                                                            DEBUG_CONFIG.log('[STAKE] PRIMARY FORMAT - No node wallets could be generated');
+                                                          DEBUG_CONFIG.warn('[STAKE] PRIMARY FORMAT - Could not fetch real mnemonics, proceeding without them');
+                                                          
+                                                          // Save to stakeResult without mnemonics
+                                                          setStakeResult(prev => ({
+                                                            ...(prev || {}),
+                                                            success: true,
+                                                            message: executeData.message || `✅ Successfully executed CLI! Real operator mnemonics will be available after processing.`,
+                                                            fileUrl: fileUrl,
+                                                            fileName: fileName,
+                                                            sessionId: currentSessionId,
+                                                            details: details,
+                                                            stakeFiles: stakeFiles
+                                                          }));
                                                         }
                                                     }
                                                     

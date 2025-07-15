@@ -20,7 +20,7 @@ export const formatBalance = (balanceInUpokt: string, isMainnet: boolean = false
         }
 
         // Formatear con separador de miles y 2 decimales mínimo, hasta 6 máximo
-        return balanceInPOKT.toLocaleString('es-ES', {
+        return balanceInPOKT.toLocaleString('en-US', {
             minimumFractionDigits: 2,
             maximumFractionDigits: 6
         });

@@ -57,37 +57,19 @@ const App: React.FC = () => {
                 await walletService.init();
             }
 
-            // Cargar balance
-            const walletInfo = await walletService.getCurrentWalletInfo();
-            let currentBalance = '0';
-
-            if (walletInfo) {
-                DEBUG_CONFIG.log(`💰 Balance loaded for ${address}: ${walletInfo.balance}`);
-                currentBalance = walletInfo.balance;
-                setBalance(currentBalance);
-            } else {
-                DEBUG_CONFIG.warn(`⚠️ No wallet info returned for address ${address}`);
-                // Intentar obtener balance directamente
-                const directBalance = await walletService.getBalance(address);
-                if (directBalance) {
-                    DEBUG_CONFIG.log(`💰 Direct balance loaded: ${directBalance}`);
-                    currentBalance = directBalance;
-                    setBalance(currentBalance);
-                } else {
-                    DEBUG_CONFIG.warn('⚠️ No se pudo obtener balance directo');
-                    setBalance('0');
-                }
-            }
+            // CRITICAL FIX: Always fetch balance directly for the specific address
+            // This ensures we get the correct balance for the selected wallet
+            DEBUG_CONFIG.log(`💰 Getting balance directly for address: ${address}`);
+            const currentBalance = await walletService.getBalance(address);
+            
+            setBalance(currentBalance);
+            DEBUG_CONFIG.log(`✅ Balance loaded: ${currentBalance} for ${address}`);
 
             // Cargar transacciones
-            try {
-                const walletTransactions = await walletService.getTransactions(address);
-                setTransactions(walletTransactions);
-                DEBUG_CONFIG.log('✅ Transactions loaded:', walletTransactions.length);
-            } catch (txError) {
-                DEBUG_CONFIG.error('❌ Error loading transactions:', txError);
-                setTransactions([]);
-            }
+            DEBUG_CONFIG.log(`📋 Getting transactions for ${address}`);
+            const currentTransactions = await walletService.getTransactions(address);
+            setTransactions(currentTransactions);
+            DEBUG_CONFIG.log(`✅ Transactions loaded: ${currentTransactions.length} transactions for ${address}`);
 
             // Disparar evento de actualización para que otros componentes se actualicen
             // Siempre usar el balance actualizado (currentBalance)
@@ -248,6 +230,11 @@ const App: React.FC = () => {
                         // CARGAR DATOS AUTOMÁTICAMENTE para wallets activas
                         if (lastWallet && lastWallet.parsed?.address) {
                             DEBUG_CONFIG.log('📊 Loading data for stored wallet:', lastWallet.parsed.address);
+                            
+                            // CRITICAL FIX: Set the current wallet address in WalletService during initialization
+                            walletService.setCurrentWalletAddress(lastWallet.parsed.address);
+                            DEBUG_CONFIG.log(`🎯 Set initial current wallet address in WalletService: ${lastWallet.parsed.address}`);
+                            
                             // Pequeño delay para permitir que la configuración se complete
                             setTimeout(() => {
                                 loadWalletData(lastWallet.parsed.address);
@@ -471,23 +458,40 @@ const App: React.FC = () => {
                         // USAR DIRECTAMENTE lo que selecciona el usuario - SIN DETECCIÓN
                         if (isMainnetSelected !== undefined) {
                             setIsMainnet(isMainnetSelected);
+                            await storageService.set('isMainnet', isMainnetSelected);
                             DEBUG_CONFIG.log(`🎯 MANUAL mainnet selection: ${isMainnetSelected} - SAVED TO STORAGE`);
                         } else {
-                            // Solo para Shannon cuando no se especifica, usar TESTNET por defecto
-                            if (network === 'shannon') {
-                                setIsMainnet(true);
-                                await storageService.set('isMainnet', true);
-                                DEBUG_CONFIG.log(`📍 Shannon TESTNET default (NO manual selection)`);
+                            // Cuando no hay selección manual, mantener la configuración actual del usuario
+                            // No cambiar la configuración de mainnet/testnet automáticamente
+                            const currentIsMainnet = await storageService.get<boolean>('isMainnet');
+                            if (currentIsMainnet !== null && currentIsMainnet !== undefined) {
+                                setIsMainnet(currentIsMainnet);
+                                DEBUG_CONFIG.log(`📍 Maintaining current user preference: ${currentIsMainnet ? 'MAINNET' : 'TESTNET'}`);
                             } else {
-                                // Morse siempre testnet
-                                setIsMainnet(true);
-                                await storageService.set('isMainnet', true);
-                                DEBUG_CONFIG.log(`🟡 MORSE always testnet - SAVED TO STORAGE`);
+                                // Solo si NO HAY configuración previa, usar TESTNET por defecto para Shannon
+                                if (network === 'shannon') {
+                                    setIsMainnet(false); // TESTNET por defecto
+                                    await storageService.set('isMainnet', false);
+                                    DEBUG_CONFIG.log(`📍 Shannon default: TESTNET (NO previous config)`);
+                                } else {
+                                    // Morse siempre testnet
+                                    setIsMainnet(false); // TESTNET para Morse
+                                    await storageService.set('isMainnet', false);
+                                    DEBUG_CONFIG.log(`🟡 Morse always TESTNET - SAVED TO STORAGE`);
+                                }
                             }
                         }
 
+                        // Usar la configuración final (ya sea manual o mantenida)
+                        const finalIsMainnet = isMainnetSelected !== undefined ? isMainnetSelected : isMainnet;
+                        
                         // Actualizar walletManager con la nueva configuración
-                        await walletService.switchNetwork(network, isMainnetSelected === true);
+                        await walletService.switchNetwork(network, finalIsMainnet);
+
+                        // CRITICAL FIX: Set the current wallet address in WalletService
+                        // This ensures the WalletService tracks which wallet is currently selected
+                        walletService.setCurrentWalletAddress(address);
+                        DEBUG_CONFIG.log(`🎯 Set current wallet address in WalletService: ${address}`);
 
                         // Importante: Cargar los datos de la nueva wallet seleccionada
                         DEBUG_CONFIG.log('🔄 Loading wallet data for new selected wallet:', address);
@@ -525,19 +529,19 @@ const App: React.FC = () => {
 
                         // MANTENER LA CONFIGURACIÓN ACTUAL DE MAINNET/TESTNET - NO SOBRESCRIBIR
                         if (network === 'morse') {
-                            setIsMainnet(true); // Morse siempre testnet
-                            await storageService.set('isMainnet', true);
-                            DEBUG_CONFIG.log(`🟡 MORSE network selected - always testnet`);
+                            setIsMainnet(false); // Morse siempre TESTNET
+                            await storageService.set('isMainnet', false);
+                            DEBUG_CONFIG.log(`🟡 MORSE network selected - always TESTNET`);
                         } else {
                             // Para Shannon: MANTENER la configuración actual del usuario
                             const currentIsMainnet = await storageService.get<boolean>('isMainnet');
                             if (currentIsMainnet !== null && currentIsMainnet !== undefined) {
                                 setIsMainnet(currentIsMainnet);
-                                DEBUG_CONFIG.log(`🔵 SHANNON network selected - MAINTAINING user preference: ${currentIsMainnet === true ? 'mainnet' : 'testnet'}`);
+                                DEBUG_CONFIG.log(`🔵 SHANNON network selected - MAINTAINING user preference: ${currentIsMainnet === true ? 'MAINNET' : 'TESTNET'}`);
                             } else {
                                 // Solo si no hay configuración previa, usar TESTNET por defecto
-                                setIsMainnet(true);
-                                await storageService.set('isMainnet', true);
+                                setIsMainnet(false); // TESTNET por defecto
+                                await storageService.set('isMainnet', false);
                                 DEBUG_CONFIG.log(`🔵 SHANNON network selected - using TESTNET default (NO previous config)`);
                             }
                         }
@@ -559,6 +563,11 @@ const App: React.FC = () => {
 
                         // No resetear inmediatamente a 0, mantener balance anterior mientras carga
                         setTransactions([]);
+
+                        // CRITICAL FIX: Set the current wallet address in WalletService
+                        // This ensures the WalletService tracks which wallet is currently selected
+                        walletService.setCurrentWalletAddress(address);
+                        DEBUG_CONFIG.log(`🎯 Set current wallet address in WalletService: ${address}`);
 
                         // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS
                         await loadWalletData(address);
@@ -587,6 +596,10 @@ const App: React.FC = () => {
 
                         // CARGAR AUTOMÁTICAMENTE LOS NUEVOS DATOS si hay wallet activa
                         if (state.walletAddress) {
+                            // CRITICAL FIX: Ensure current wallet address is set in WalletService
+                            walletService.setCurrentWalletAddress(state.walletAddress);
+                            DEBUG_CONFIG.log(`🎯 Set current wallet address in WalletService: ${state.walletAddress}`);
+                            
                             await loadWalletData(state.walletAddress);
                         }
 

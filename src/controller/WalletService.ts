@@ -858,6 +858,24 @@ export class WalletService {
     }
 
     /**
+     * Sets the current wallet address (for wallet switching)
+     * @param address - The wallet address to set as current
+     */
+    setCurrentWalletAddress(address: string): void {
+        DEBUG_CONFIG.log(`🎯 WalletService: Setting current wallet address to ${address}`);
+        this.currentWalletAddress = address;
+        storageService.set(STORAGE_KEYS.WALLET_ADDRESS, address);
+    }
+
+    /**
+     * Gets the current wallet address
+     * @returns The current wallet address or null if none set
+     */
+    getCurrentWalletAddress(): string | null {
+        return this.currentWalletAddress;
+    }
+
+    /**
      * Obtiene la información de la wallet actual
      * @returns WalletInfo | null - Información de la wallet actual o null si no hay ninguna
      */
