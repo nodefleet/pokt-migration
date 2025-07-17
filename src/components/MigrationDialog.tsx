@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { MigrationService } from '../controller/MigrationService';
 import { storageService } from '../controller/storage.service';
 import { walletService } from '../controller/WalletService';
+// Importar Firebase Analytics
+import { trackEvent } from '../firebase';
 
 // FontAwesome icons as components
 const X = ({ className }: { className?: string }) => <i className={`fas fa-times ${className || ''}`}></i>;
@@ -377,11 +379,27 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
                 setError(errorMessage);
                 setMigrationResult(result);
+
+                // Registrar evento de migración fallida
+                trackEvent('migration_failed', {
+                    error_message: errorMessage,
+                    morse_wallets_count: selectedMorse.length,
+                    shannon_wallet: shannonWallet.address
+                });
+
                 return;
             }
 
             setMigrationResult(result);
             setSuccessMessage('Migration completed successfully!');
+
+            // Registrar evento de migración exitosa
+            trackEvent('migration_success', {
+                morse_wallets_count: selectedMorse.length,
+                shannon_wallet: shannonWallet.address,
+                accounts_migrated: result.result?.mappings?.length || 0
+            });
+
         } catch (err: any) {
             console.error('Migration error:', err);
 
@@ -401,6 +419,15 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             }
 
             setError(errorMessage);
+
+            // Registrar evento de error en migración
+            trackEvent('migration_failed', {
+                error_message: errorMessage,
+                morse_wallets_count: selectedMorse.length,
+                shannon_wallet: shannonWallet.address,
+                error_type: 'request_error'
+            });
+
         } finally {
             setIsLoading(false);
         }
