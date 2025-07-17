@@ -96,7 +96,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             let isPPKFile = false;
             try {
                 const parsed = JSON.parse(inputText);
-                isPPKFile = parsed.kdf && parsed.salt && parsed.ciphertext && parsed.hint;
+                isPPKFile = parsed.kdf && parsed.salt && parsed.ciphertext && parsed.hint !== undefined;
             } catch (e) {
                 // Not a JSON file, continue with normal processing
             }
@@ -107,7 +107,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 
                 try {
                     // Importar usando morseWalletService con el JSON completo
-                    const result = await morseWalletService.importMorsePrivateKey(inputText, morsePassword.trim() || 'default');
+                    const result = await morseWalletService.importMorsePrivateKey(inputText, morsePassword.trim());
 
                     console.log('✅ Wallet PPK importada correctamente:', {
                         address: result.address,
@@ -116,7 +116,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                     });
 
                     // Importar usando la función proporcionada
-                    await onWalletImport(result.serialized, morsePassword.trim() || 'default', 'morse');
+                    await onWalletImport(result.serialized, morsePassword.trim(), 'morse');
 
                     // Actualizar la lista de wallets
                     const existing = (await storageService.get<any[]>('morse_wallets')) || [];
@@ -190,14 +190,14 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
                     try {
                         // Importar usando morseWalletService
-                        const result = await morseWalletService.importMorsePrivateKey(cleanKey, morsePassword.trim() || 'default');
+                        const result = await morseWalletService.importMorsePrivateKey(cleanKey, morsePassword.trim());
 
                         console.log('✅ Wallet importada correctamente:', {
                             address: result.address
                         });
 
                         // Importar usando la función proporcionada
-                        await onWalletImport(result.serialized, morsePassword.trim() || 'default', 'morse');
+                        await onWalletImport(result.serialized, morsePassword.trim(), 'morse');
 
                         // Actualizar la lista de wallets
                         const existing = (await storageService.get<any[]>('morse_wallets')) || [];
@@ -595,7 +595,7 @@ PrivateKey1
                                             <div className="relative">
                                                 <motion.input
                                                     type={showPassword ? "text" : "password"}
-                                                    placeholder="Password (required for PPK files)"
+                                                    placeholder="Password (optional - leave blank for unencrypted PPK files)"
                                                     className="w-full px-4 py-3 rounded-xl bg-black border-2 border-gray-700 focus:border-blue-500 focus:outline-none text-white placeholder-gray-500 transition-colors duration-300 pr-12"
                                                     value={morsePassword}
                                                     onChange={(e) => setMorsePassword(e.target.value)}

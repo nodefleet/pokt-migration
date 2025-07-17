@@ -85,7 +85,7 @@ export class MorseWalletService {
             const hasKdf = parsed.kdf && typeof parsed.kdf === 'string';
             const hasSalt = parsed.salt && typeof parsed.salt === 'string';
             const hasCiphertext = parsed.ciphertext && typeof parsed.ciphertext === 'string';
-            const hasHint = parsed.hint && typeof parsed.hint === 'string';
+            const hasHint = parsed.hint !== undefined && typeof parsed.hint === 'string'; // Allow empty hints
 
             // Verificar que sea formato scrypt (común en PPK)
             const isScryptFormat = hasKdf && parsed.kdf === 'scrypt';
@@ -225,14 +225,31 @@ export class MorseWalletService {
 
                     let keyManager;
                     try {
-                        DEBUG_CONFIG.log('🔐 Trying PPK import with password and string...');
+                        DEBUG_CONFIG.log('🔐 Trying PPK import with provided password...');
                         keyManager = await KeyManager.fromPPK({ 
                             ppk: ppkString,
                             password 
                         });
                     } catch (ppkError: any) {
-                        DEBUG_CONFIG.error('❌ PPK import failed with password:', ppkError.message);
-                        throw new Error(`PPK import failed: ${ppkError.message}. Please verify the password and PPK format.`);
+                        DEBUG_CONFIG.error('❌ PPK import failed with provided password:', ppkError.message);
+                        
+                        // If password was provided and it failed, try with empty password for unencrypted PPK files
+                        if (password && password.trim() !== '') {
+                            try {
+                                DEBUG_CONFIG.log('🔐 Trying PPK import with empty password (unencrypted PPK)...');
+                                keyManager = await KeyManager.fromPPK({ 
+                                    ppk: ppkString,
+                                    password: '' 
+                                });
+                                DEBUG_CONFIG.log('✅ PPK import successful with empty password - this was an unencrypted PPK file');
+                            } catch (emptyPasswordError: any) {
+                                DEBUG_CONFIG.error('❌ PPK import also failed with empty password:', emptyPasswordError.message);
+                                throw new Error(`PPK import failed: ${ppkError.message}. If this is an encrypted PPK file, please verify the password. If it's unencrypted, leave the password field blank.`);
+                            }
+                        } else {
+                            // If no password was provided or password was empty, and it still failed
+                            throw new Error(`PPK import failed: ${ppkError.message}. If this is an encrypted PPK file, please provide the correct password.`);
+                        }
                     }
 
                     // Obtener dirección y clave pública
