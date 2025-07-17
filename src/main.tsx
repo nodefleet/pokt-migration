@@ -20,6 +20,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 // Importar Firebase Analytics
 import { analytics, trackEvent } from './firebase';
 import { DEBUG_CONFIG } from './controller/config';
+// Importar Firebase Analytics
+import { analytics, trackEvent } from './firebase';
 
 // Ya no es necesario configurar Buffer aquí, ya está en polyfills.ts
 // import { Buffer } from 'buffer';
@@ -347,7 +349,15 @@ const App: React.FC = () => {
                 error: errorMessage
             });
             DEBUG_CONFIG.error('❌ Error importing wallet:', error);
-            throw error;
+            // Registrar evento de error en importación
+            trackEvent('wallet_import_failed', {
+                network_type: network || networkType,
+                is_mainnet: isMainnet,
+                from_storage: fromStorage,
+                error: error
+            });
+
+            throw error; // Re-lanzar el error para mantener la compatibilidad con la interfaz
         }
     };
 
@@ -392,7 +402,14 @@ const App: React.FC = () => {
             });
 
             DEBUG_CONFIG.error('Error creating wallet:', error);
-            throw error;
+            // Registrar evento de error en creación
+            trackEvent('wallet_creation_failed', {
+                network_type: network || networkType,
+                is_mainnet: isMainnet,
+                error: error
+            });
+
+            throw error; // Re-lanzar el error para mantener la compatibilidad con la interfaz
         }
     };
 
@@ -420,7 +437,7 @@ const App: React.FC = () => {
                     setBalance('0');
                     setTransactions([]);
                     setNetworkError(null);
-                    
+
                     // Navigate to home page
                     navigate('/');
                 }
