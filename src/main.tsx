@@ -17,6 +17,8 @@ import { Transaction, NetworkType } from './controller/WalletManager';
 import { AnimatePresence } from 'framer-motion';
 import { storageService } from './controller/storage.service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+// Importar Firebase Analytics
+import { analytics, trackEvent } from './firebase';
 
 // Ya no es necesario configurar Buffer aquí, ya está en polyfills.ts
 // import { Buffer } from 'buffer';
@@ -36,6 +38,13 @@ const App: React.FC = () => {
     const [isMainnet, setIsMainnet] = useState<boolean>(false);
     const [networkError, setNetworkError] = useState<string | null>(null);
     const [walletService] = useState(() => new WalletService());
+
+    // Registrar evento de inicialización de la aplicación
+    useEffect(() => {
+        trackEvent('app_initialized', {
+            timestamp: new Date().toISOString()
+        });
+    }, []);
 
     // Función para cargar balance y transacciones
     const loadWalletData = async (address: string) => {
@@ -328,10 +337,27 @@ const App: React.FC = () => {
             navigate('/wallet');
             console.log('✅ handleWalletImport COMPLETED successfully');
 
+            trackEvent('wallet_imported', {
+                network_type: walletInfo.network,
+                is_mainnet: walletInfo.isMainnet,
+                from_storage: fromStorage
+            });
+
             return { address: walletInfo.address, network: walletInfo.network };
         } catch (error) {
             console.error('❌ Error importing wallet:', error);
-            throw error;
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            setNetworkError(`Error importing wallet: ${errorMessage}`);
+
+            // Registrar evento de error en importación
+            trackEvent('wallet_import_failed', {
+                network_type: network || networkType,
+                is_mainnet: isMainnet,
+                from_storage: fromStorage,
+                error: errorMessage
+            });
+
+            throw error; // Re-lanzar el error para mantener la compatibilidad con la interfaz
         }
     };
 
@@ -340,6 +366,11 @@ const App: React.FC = () => {
             if (!walletService.getWalletManager()) {
                 await walletService.init();
             }
+
+            trackEvent('wallet_created', {
+                network_type: network || networkType,
+                is_mainnet: isMainnet
+            });
 
             // Usar el método createWallet del walletService
             const walletInfo = await walletService.createWallet(password, network || 'shannon', false);
@@ -368,8 +399,18 @@ const App: React.FC = () => {
 
             return { address: walletInfo.address, network: walletInfo.network };
         } catch (error) {
-            console.error('Error creating wallet:', error);
-            throw error;
+            console.error('❌ Error creating wallet:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            setNetworkError(`Error creating wallet: ${errorMessage}`);
+
+            // Registrar evento de error en creación
+            trackEvent('wallet_creation_failed', {
+                network_type: network || networkType,
+                is_mainnet: isMainnet,
+                error: errorMessage
+            });
+
+            throw error; // Re-lanzar el error para mantener la compatibilidad con la interfaz
         }
     };
 

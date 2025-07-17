@@ -10,6 +10,8 @@ import { formatBalance, shortenAddress } from '../utils/utils';
 import { storageService } from '../controller/storage.service';
 import MigrationDialog from './MigrationDialog';
 import { morseWalletService } from '../controller/MorseWallet';
+// Importar Firebase Analytics
+import { trackEvent } from '../firebase';
 
 interface StoredWallet {
     serialized: string;
