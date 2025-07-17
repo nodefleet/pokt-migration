@@ -347,15 +347,7 @@ const App: React.FC = () => {
                 error: errorMessage
             });
             DEBUG_CONFIG.error('❌ Error importing wallet:', error);
-            // Registrar evento de error en importación
-            trackEvent('wallet_import_failed', {
-                network_type: network || networkType,
-                is_mainnet: isMainnet,
-                from_storage: fromStorage,
-                error: error
-            });
-
-            throw error; // Re-lanzar el error para mantener la compatibilidad con la interfaz
+            throw error;
         }
     };
 
@@ -394,20 +386,11 @@ const App: React.FC = () => {
 
             // Registrar evento de error en creación
             trackEvent('wallet_creation_failed', {
-                network_type: network || networkType,
-                is_mainnet: isMainnet,
                 error: errorMessage
             });
 
             DEBUG_CONFIG.error('Error creating wallet:', error);
-            // Registrar evento de error en creación
-            trackEvent('wallet_creation_failed', {
-                network_type: network || networkType,
-                is_mainnet: isMainnet,
-                error: error
-            });
-
-            throw error; // Re-lanzar el error para mantener la compatibilidad con la interfaz
+            throw error;
         }
     };
 
@@ -435,7 +418,6 @@ const App: React.FC = () => {
                     setBalance('0');
                     setTransactions([]);
                     setNetworkError(null);
-
                     // Navigate to home page
                     navigate('/');
                 }
