@@ -20,6 +20,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 // Importar Firebase Analytics
 import { analytics, trackEvent } from './firebase';
 import { DEBUG_CONFIG } from './controller/config';
+// Importar Firebase Analytics
+import { analytics, trackEvent } from './firebase';
 
 // Ya no es necesario configurar Buffer aquí, ya está en polyfills.ts
 // import { Buffer } from 'buffer';
