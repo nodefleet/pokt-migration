@@ -318,6 +318,19 @@ const App: React.FC = () => {
 
             // Importante: Cargar los datos de la wallet antes de navegar
             await loadWalletData(walletInfo.address);
+
+            // Trigger wallet selector refresh  
+            window.dispatchEvent(new CustomEvent('wallets_updated', {
+                detail: { type: 'wallet_imported', network: walletInfo.network, address: walletInfo.address }
+            }));
+            DEBUG_CONFIG.log('✅ Wallet selector refresh event triggered for import');
+
+            // Also trigger migration prerequisites refresh
+            window.dispatchEvent(new CustomEvent('migration_check_needed', {
+                detail: { type: 'wallet_imported', network: walletInfo.network, address: walletInfo.address }
+            }));
+            DEBUG_CONFIG.log('✅ Migration prerequisites refresh event triggered for import');
+
             navigate('/wallet');
 
             return { address: walletInfo.address, network: walletInfo.network };
@@ -329,29 +342,59 @@ const App: React.FC = () => {
 
     const handleCreateWallet = async (password: string, network?: NetworkType) => {
         try {
+            DEBUG_CONFIG.log(`🚀 handleCreateWallet: Creating ${network || 'shannon'} wallet...`);
+            
             if (!walletService.getWalletManager()) {
                 await walletService.init();
             }
 
+            // Asegurar que estamos creando una wallet Shannon (por defecto)
+            const targetNetwork = network || 'shannon';
+            const targetIsMainnet = false; // Crear como testnet por defecto
+
+            DEBUG_CONFIG.log(`🎯 Target configuration: ${targetNetwork} ${targetIsMainnet ? 'mainnet' : 'testnet'}`);
+
             // Usar el método createWallet del walletService
-            const walletInfo = await walletService.createWallet(password, network || 'shannon', false);
+            const walletInfo = await walletService.createWallet(password, targetNetwork, targetIsMainnet);
+            DEBUG_CONFIG.log(`✅ Wallet created:`, walletInfo);
 
-            setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
-            setNetworkType(walletInfo.network);
+            // Check if we already have an active wallet
+            if (!state.walletAddress) {
+                // No active wallet - switch to the new wallet (normal first-time flow)
+                DEBUG_CONFIG.log('🎯 No active wallet - switching to newly created wallet');
+                setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
+                setNetworkType(walletInfo.network);
+                setIsMainnet(walletInfo.isMainnet);
+                
+                DEBUG_CONFIG.log(`🔄 App state updated - Address: ${walletInfo.address}, Network: ${walletInfo.network}, IsMainnet: ${walletInfo.isMainnet}`);
 
-            // Para nueva wallet creada, usar el valor detectado y guardarlo
-            setIsMainnet(walletInfo.isMainnet);
-            DEBUG_CONFIG.log(`💾 New wallet created - saving isMainnet: ${walletInfo.isMainnet}`);
+                // Load wallet data before navigating
+                DEBUG_CONFIG.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
+                await loadWalletData(walletInfo.address);
 
-            // Importante: Cargar los datos de la wallet antes de navegar
-            DEBUG_CONFIG.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
-            await loadWalletData(walletInfo.address);
+                navigate('/wallet');
+            } else {
+                // Keep the current wallet active but show success message
+                DEBUG_CONFIG.log(`🎯 ${targetNetwork.toUpperCase()} wallet created successfully! Address: ${walletInfo.address}`);
+                DEBUG_CONFIG.log(`📍 Keeping current ${networkType.toUpperCase()} wallet active: ${state.walletAddress}`);
+                DEBUG_CONFIG.log(`💡 You can now switch between wallets using the wallet selector`);
+            }
 
-            navigate('/wallet');
+            // Trigger wallet selector refresh (always fire this event)
+            window.dispatchEvent(new CustomEvent('wallets_updated', {
+                detail: { type: 'wallet_created', network: walletInfo.network, address: walletInfo.address }
+            }));
+            DEBUG_CONFIG.log('✅ Wallet selector refresh event triggered');
+
+            // Also trigger migration prerequisites refresh
+            window.dispatchEvent(new CustomEvent('migration_check_needed', {
+                detail: { type: 'wallet_created', network: walletInfo.network, address: walletInfo.address }
+            }));
+            DEBUG_CONFIG.log('✅ Migration prerequisites refresh event triggered');
 
             return { address: walletInfo.address, network: walletInfo.network };
         } catch (error) {
-            DEBUG_CONFIG.error('Error creating wallet:', error);
+            DEBUG_CONFIG.error('❌ Error creating wallet:', error);
             throw error;
         }
     };

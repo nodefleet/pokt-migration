@@ -225,7 +225,23 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             }
         };
 
+        // Listener for migration prerequisites refresh
+        const handleMigrationCheck = () => {
+            DEBUG_CONFIG.log('🔄 WalletDashboard: Migration prerequisites refresh triggered');
+            // Add small delay to ensure storage operations are complete
+            setTimeout(() => {
+                loadStoredWallets();
+            }, 100);
+        };
+
         loadStoredWallets();
+        
+        // Add event listener for migration check
+        window.addEventListener('migration_check_needed', handleMigrationCheck);
+
+        return () => {
+            window.removeEventListener('migration_check_needed', handleMigrationCheck);
+        };
     }, []);
 
     // Escuchar cambios en el storage para actualizar automáticamente
@@ -347,14 +363,34 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             // Verificar si hay wallets de Morse disponibles
             const morseWalletsData = await storageService.get<any[]>('morse_wallets');
             const legacyMorseWallet = await storageService.get<any>('morse_wallet');
+            
+            DEBUG_CONFIG.log('🔍 Migration debug - Morse wallets:', {
+                morseWalletsData: morseWalletsData ? morseWalletsData.length : 0,
+                legacyMorseWallet: legacyMorseWallet ? 'EXISTS' : 'NOT_FOUND',
+                legacyMorseAddress: legacyMorseWallet?.parsed?.address
+            });
+            
             const hasMorseWallets = (Array.isArray(morseWalletsData) && morseWalletsData.length > 0) ||
                 (legacyMorseWallet && legacyMorseWallet.parsed?.address);
 
             // Verificar si hay wallets de Shannon disponibles
             const shannonWalletsData = await storageService.get<any[]>('shannon_wallets');
             const legacyShannonWallet = await storageService.get<any>('shannon_wallet');
+            
+            DEBUG_CONFIG.log('🔍 Migration debug - Shannon wallets:', {
+                shannonWalletsData: shannonWalletsData ? shannonWalletsData.length : 0,
+                legacyShannonWallet: legacyShannonWallet ? 'EXISTS' : 'NOT_FOUND',
+                legacyShannonAddress: legacyShannonWallet?.parsed?.address,
+                legacyShannonWalletPreview: legacyShannonWallet
+            });
+            
             const hasShannonWallets = (Array.isArray(shannonWalletsData) && shannonWalletsData.length > 0) ||
                 (legacyShannonWallet && legacyShannonWallet.parsed?.address);
+
+            DEBUG_CONFIG.log('🔍 Migration debug - Final checks:', {
+                hasMorseWallets,
+                hasShannonWallets
+            });
 
             // Si no hay wallets de Morse, redirigir a la página de importación de Morse
             if (!hasMorseWallets) {
@@ -378,6 +414,7 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 return;
             }
 
+            DEBUG_CONFIG.log('✅ All migration prerequisites met. Opening migration dialog...');
             setMorsePrivateKey(privateKey);
             setShowMigrationDialog(true);
         } catch (error) {
@@ -417,7 +454,15 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
 
     // Solo mostrar acciones para Morse (botón Migrate) y Shannon (sin Swap)
     const actions = isMorseNetwork ? [
-        { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleMigrationRequest() },
+        { 
+            label: 'Migrate', 
+            icon: '🔄', 
+            color: 'from-blue-600/30 to-indigo-600/30', 
+            onClick: () => {
+                DEBUG_CONFIG.log('🔄 Migrate button clicked (Morse network)');
+                handleMigrationRequest();
+            }
+        },
         {
             label: 'Import Wallet', icon: '📥', color: 'from-green-600/30 to-emerald-600/30', onClick: () => {
                 DEBUG_CONFIG.log('Navigating to import individual...');
@@ -425,7 +470,15 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             }
         }
     ] : [
-        { label: 'Migrate', icon: '🔄', color: 'from-blue-600/30 to-indigo-600/30', onClick: () => handleMigrationRequest() },
+        { 
+            label: 'Migrate', 
+            icon: '🔄', 
+            color: 'from-blue-600/30 to-indigo-600/30', 
+            onClick: () => {
+                DEBUG_CONFIG.log('🔄 Migrate button clicked (Shannon network)');
+                handleMigrationRequest();
+            }
+        },
         {
             label: 'Import Wallet', icon: '📥', color: 'from-green-600/30 to-emerald-600/30', onClick: () => {
                 DEBUG_CONFIG.log('Navigating to import individual...');
@@ -437,6 +490,17 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     // Determinar si debemos deshabilitar funciones debido al modo offline
     const isOffline = walletManager?.isOfflineMode ? walletManager.isOfflineMode() : false;
     const disableFeatures = isOffline && isMorseNetwork;
+
+    // DEBUG: Log the values to understand why migrate button might be disabled
+    console.log('🔍 WalletDashboard Debug - Migrate Button Status:', {
+        network,
+        isMorseNetwork,
+        walletManagerExists: !!walletManager,
+        hasIsOfflineMethod: !!(walletManager?.isOfflineMode),
+        isOffline,
+        disableFeatures,
+        shouldDisableMigrate: disableFeatures
+    });
 
     return (
         <motion.div
@@ -534,7 +598,9 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 {actions.map((action) => {
                                     const isImportAction = action.label === 'Import Wallet';
-                                    const shouldDisable = disableFeatures && !isImportAction;
+                                    const isMigrateAction = action.label === 'Migrate';
+                                    // Migration uses backend service (not direct RPC), so it's available even in offline mode
+                                    const shouldDisable = disableFeatures && !isImportAction && !isMigrateAction;
 
                                     return (
                                         <motion.button
@@ -545,7 +611,17 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                             variants={itemVariants}
                                             disabled={shouldDisable}
                                             title={shouldDisable ? 'This feature is not available in offline mode' : ''}
-                                            onClick={action.onClick}
+                                            onClick={(e) => {
+                                                if (action.label === 'Migrate') {
+                                                    console.log('🔄 Migrate button clicked!', {
+                                                        shouldDisable,
+                                                        isOffline,
+                                                        disableFeatures,
+                                                        isMorseNetwork
+                                                    });
+                                                }
+                                                action.onClick();
+                                            }}
                                         >
                                             <span className="block text-3xl mb-3">{action.icon}</span>
                                             <span className="text-lg font-medium">{action.label}</span>

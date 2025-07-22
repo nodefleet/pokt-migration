@@ -45,23 +45,35 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
 
         loadInitialData();
 
-        // Listener para actualizaciones de storage (solo wallets, no isMainnet)
+        // Listener para actualizaciones de storage y wallets
         const handleStorageUpdate = () => {
             DEBUG_CONFIG.log('WalletSelector: Storage actualizado, recargando wallets');
             loadAvailableWallets();
         };
 
+        const handleWalletsUpdate = () => {
+            DEBUG_CONFIG.log('WalletSelector: Wallets actualizados, recargando wallets');
+            loadAvailableWallets();
+        };
+
         window.addEventListener('storage_updated', handleStorageUpdate);
+        window.addEventListener('wallets_updated', handleWalletsUpdate);
 
         return () => {
             window.removeEventListener('storage_updated', handleStorageUpdate);
+            window.removeEventListener('wallets_updated', handleWalletsUpdate);
         };
     }, []); // SIN DEPENDENCIAS para que solo se ejecute una vez
 
     const loadAvailableWallets = async () => {
         // Usar el nuevo método del walletService para obtener todas las wallets
         try {
+            DEBUG_CONFIG.log('🔄 WalletSelector: Loading available wallets...');
             const allWallets = await walletService.getAllWallets();
+            DEBUG_CONFIG.log('✅ WalletSelector: Wallets loaded successfully:', {
+                shannon: allWallets.shannon.length,
+                morse: allWallets.morse.length
+            });
             setAvailableWallets(allWallets);
             setHasShannon(allWallets.shannon.length > 0);
             setHasMorse(allWallets.morse.length > 0);
@@ -109,6 +121,11 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                     morseSeen.add(addr);
                 }
                 return true;
+            });
+
+            DEBUG_CONFIG.log('🔄 WalletSelector: Fallback wallet loading completed:', {
+                shannon: shannonWallets.length,
+                morse: morseWallets.length
             });
 
             setAvailableWallets({ shannon: shannonWallets, morse: morseWallets });
