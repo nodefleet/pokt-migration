@@ -74,4 +74,5 @@ export interface StoredWallet {
     network: NetworkType;
     timestamp: number;
     parsed: any;
+    walletType?: 'mnemonic' | 'private_key'; // Type of wallet: mnemonic phrase or hex private key
 } 

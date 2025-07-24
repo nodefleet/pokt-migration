@@ -10,6 +10,8 @@ import { formatBalance, shortenAddress } from '../utils/utils';
 import { storageService } from '../controller/storage.service';
 import MigrationDialog from './MigrationDialog';
 import { morseWalletService } from '../controller/MorseWallet';
+// Importar Firebase Analytics
+import { trackEvent } from '../firebase';
 
 interface StoredWallet {
     serialized: string;
@@ -406,17 +408,57 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                 return;
             }
 
-            // Obtener la clave privada de Morse
-            const privateKey = await morseWalletService.getMorsePrivateKey();
+            // Check for Morse wallet data (private key OR PKK armored key)
+            DEBUG_CONFIG.log('🔑 Checking for Morse wallet data (private key or PKK armored)...');
+            try {
+                // First try to get private key
+                const privateKey = await morseWalletService.getMorsePrivateKey();
+                
+                // If no private key, check for PKK armored wallets
+                let hasPKKArmoredWallet = false;
+                if (!privateKey) {
+                    const { storageService } = await import('../controller/storage.service');
+                    const morseWalletsData = await storageService.get<any[]>('morse_wallets') || [];
+                    
+                    // Check if any Morse wallet has PKK armored data
+                    hasPKKArmoredWallet = morseWalletsData.some((wallet: any) => {
+                        return wallet.parsed?.ppkData || 
+                               (wallet.parsed?.kdf && wallet.parsed?.salt && wallet.parsed?.ciphertext);
+                    });
+                    
+                    DEBUG_CONFIG.log('🔐 PKK armored wallet check:', {
+                        morseWalletsCount: morseWalletsData.length,
+                        hasPKKArmoredWallet,
+                        walletsWithPKK: morseWalletsData.filter(w => w.parsed?.ppkData || (w.parsed?.kdf && w.parsed?.salt && w.parsed?.ciphertext)).length
+                    });
+                }
 
-            if (!privateKey) {
-                setError('I cannot get the private key of morse. please import a valid morse wallet.');
+                DEBUG_CONFIG.log('🔑 Morse wallet data result:', {
+                    hasPrivateKey: !!privateKey,
+                    privateKeyLength: privateKey ? privateKey.length : 0,
+                    privateKeyPreview: privateKey ? privateKey.substring(0, 10) + '...' : 'null',
+                    hasPKKArmoredWallet
+                });
+
+                if (!privateKey && !hasPKKArmoredWallet) {
+                    DEBUG_CONFIG.error('❌ No Morse wallet data found (neither private key nor PKK armored)');
+                    setError('No Morse wallet found. Please import a Morse wallet first.');
+                    return;
+                }
+
+                DEBUG_CONFIG.log('✅ All migration prerequisites met. Opening migration dialog...');
+                setMorsePrivateKey(privateKey); // Will be null for PKK wallets, but that's fine
+                setShowMigrationDialog(true);
+                DEBUG_CONFIG.log('✅ Migration dialog state updated:', {
+                    showMigrationDialog: true,
+                    morsePrivateKeySet: !!privateKey,
+                    hasPKKArmoredWallet
+                });
+            } catch (error) {
+                DEBUG_CONFIG.error('❌ Error checking Morse wallet data:', error);
+                setError(`Error checking Morse wallet data: ${error instanceof Error ? error.message : String(error)}`);
                 return;
             }
-
-            DEBUG_CONFIG.log('✅ All migration prerequisites met. Opening migration dialog...');
-            setMorsePrivateKey(privateKey);
-            setShowMigrationDialog(true);
         } catch (error) {
             DEBUG_CONFIG.error('❌ Error opening migration dialog:', error);
             setError('Error al abrir el diálogo de migración');
@@ -491,6 +533,16 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const isOffline = walletManager?.isOfflineMode ? walletManager.isOfflineMode() : false;
     const disableFeatures = isOffline && isMorseNetwork;
 
+    // Safety check: if walletManager is null, don't disable migrate button
+    if (!walletManager) {
+        console.warn('⚠️ WalletManager is null - migrate button will remain enabled');
+    }
+
+    // Calculate actual shouldDisable for migrate button
+    const isMigrateAction = true; // For migrate button
+    const isImportAction = false; // For migrate button
+    const actualShouldDisableMigrate = disableFeatures && !isImportAction && !isMigrateAction;
+
     // DEBUG: Log the values to understand why migrate button might be disabled
     console.log('🔍 WalletDashboard Debug - Migrate Button Status:', {
         network,
@@ -499,7 +551,8 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
         hasIsOfflineMethod: !!(walletManager?.isOfflineMode),
         isOffline,
         disableFeatures,
-        shouldDisableMigrate: disableFeatures
+        actualShouldDisableMigrate, // This is the real value for migrate button
+        calculation: `${disableFeatures} && !${isImportAction} && !${isMigrateAction} = ${actualShouldDisableMigrate}`
     });
 
     return (
@@ -612,15 +665,27 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                                             disabled={shouldDisable}
                                             title={shouldDisable ? 'This feature is not available in offline mode' : ''}
                                             onClick={(e) => {
-                                                if (action.label === 'Migrate') {
-                                                    console.log('🔄 Migrate button clicked!', {
-                                                        shouldDisable,
-                                                        isOffline,
-                                                        disableFeatures,
-                                                        isMorseNetwork
-                                                    });
+                                                console.log(`🖱️ Button "${action.label}" clicked!`, {
+                                                    shouldDisable,
+                                                    disabled: shouldDisable,
+                                                    hasOnClick: !!action.onClick
+                                                });
+                                                
+                                                if (shouldDisable) {
+                                                    console.log(`❌ Button "${action.label}" is disabled, preventing action`);
+                                                    e.preventDefault();
+                                                    return;
                                                 }
-                                                action.onClick();
+                                                
+                                                if (action.onClick) {
+                                                    try {
+                                                        action.onClick();
+                                                    } catch (error) {
+                                                        console.error(`Error in ${action.label} onClick:`, error);
+                                                    }
+                                                } else {
+                                                    console.warn(`No onClick handler for ${action.label}`);
+                                                }
                                             }}
                                         >
                                             <span className="block text-3xl mb-3">{action.icon}</span>
@@ -687,11 +752,11 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             </main>
 
             {/* Migration Dialog */}
-            {showMigrationDialog && morsePrivateKey && (
+            {showMigrationDialog && (
                 <MigrationDialog
                     isOpen={showMigrationDialog}
                     onClose={handleCloseMigrationDialog}
-                    morsePrivateKey={morsePrivateKey}
+                    morsePrivateKey={morsePrivateKey || undefined}
                     morseAddress={walletAddress}
                 />
             )}

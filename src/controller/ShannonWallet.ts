@@ -232,7 +232,8 @@ export const useCreateWallet = (): UseMutationResult<{ address: string; serializ
                     network: "shannon",
                     timestamp: timestamp,
                     parsed: { address },
-                    mnemonic: mnemonic
+                    mnemonic: mnemonic,
+                    walletType: 'mnemonic' // Mark as created from mnemonic
                 };
 
                 // Obtener wallets existentes o inicializar array vacío
@@ -247,7 +248,8 @@ export const useCreateWallet = (): UseMutationResult<{ address: string; serializ
                     network: "shannon",
                     timestamp: timestamp,
                     parsed: { address },
-                    mnemonic: mnemonic
+                    mnemonic: mnemonic,
+                    walletType: 'mnemonic' // Mark as created from mnemonic
                 });
                 DEBUG_CONFIG.log("Wallet saved in shannon_wallet with mnemonic and privateKey");
 
@@ -406,7 +408,8 @@ export async function createWalletDirect(password: string, isMainnet: boolean = 
             network: "shannon",
             timestamp: timestamp,
             parsed: { address },
-            mnemonic: mnemonic // Guardar también el mnemónico
+            mnemonic: mnemonic, // Guardar también el mnemónico
+            walletType: 'mnemonic' // Mark as created from mnemonic
         };
 
         // Obtener wallets existentes o inicializar array vacío
@@ -420,7 +423,8 @@ export async function createWalletDirect(password: string, isMainnet: boolean = 
             network: "shannon",
             timestamp: timestamp,
             parsed: { address },
-            mnemonic: mnemonic
+            mnemonic: mnemonic,
+            walletType: 'mnemonic' // Mark as created from mnemonic
         });
         DEBUG_CONFIG.log("Wallet saved in shannon_wallet with mnemonic and privateKey");
 

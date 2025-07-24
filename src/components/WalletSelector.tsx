@@ -377,9 +377,18 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                                                         <button
                                                             onClick={() => walletAddress && handleShowPrivateKey(walletAddress, 'shannon')}
                                                             className="text-xs px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors"
-                                                            title="View private key"
+                                                            title={
+                                                                wallet.walletType === 'private_key' || 
+                                                                (wallet.serialized && wallet.serialized.length === 64 && /^[0-9a-fA-F]+$/.test(wallet.serialized.trim())) 
+                                                                    ? "View private key" 
+                                                                    : "View secret phrase"
+                                                            }
                                                         >
-                                                            <i className="fas fa-key mr-1"></i> View Secret Phrase
+                                                            <i className="fas fa-key mr-1"></i> 
+                                                            {wallet.walletType === 'private_key' || 
+                                                             (wallet.serialized && wallet.serialized.length === 64 && /^[0-9a-fA-F]+$/.test(wallet.serialized.trim()))
+                                                                ? 'View Private Key' 
+                                                                : 'View Secret Phrase'}
                                                         </button>
                                                     </div>
                                                 )}

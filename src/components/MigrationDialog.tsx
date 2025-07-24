@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { MigrationService } from '../controller/MigrationService';
 import { storageService } from '../controller/storage.service';
 import { walletService } from '../controller/WalletService';
+// Importar Firebase Analytics
+import { trackEvent } from '../firebase';
 
 // FontAwesome icons as components
 const X = ({ className }: { className?: string }) => <i className={`fas fa-times ${className || ''}`}></i>;
@@ -103,7 +105,7 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
         } else {
             link = 'https://faucet.beta.testnet.pokt.network/mact/';
         }
-        console.log(`🔍 link: ${link}`);
+
         setLink(link);
     }, [isOpen]);
 
@@ -132,7 +134,6 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             `;
         }
         const isMainnet = storageService.getSync<boolean>('isMainnet') as boolean;
-        console.log(`🔍 isMainnet: ${isMainnet}`);
 
         // Verify account exists
         fetch(`https://shannon-grove-api.mainnet.poktroll.com/cosmos/auth/v1beta1/accounts/${shannonWallet.address}`)
@@ -183,7 +184,6 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
     const loadWallets = async () => {
         try {
-            console.log('🔄 Loading wallets from localStorage...');
 
             // ---- MORSE wallets ---- //
             const storedMorseArr = await storageService.get<any[]>('morse_wallets');
@@ -260,11 +260,11 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             // Get backend URL from environment
             const backendUrl = import.meta.env.VITE_MIGRATION_API_URL || 'http://localhost:3001';
 
-            console.log(`🔍 Verificando disponibilidad del backend en ${backendUrl}/api/migration/health`);
+
 
             // Check backend health - verificación simple
             // Si el backend responde correctamente (sin importar el contenido), lo consideramos disponible
-            const response = await fetch(`${backendUrl}/api/migration/health`, {
+            const response = await fetch(`${backendUrl}/health`, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -273,7 +273,6 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
             // Si la respuesta es exitosa (status 200-299), consideramos el servicio disponible
             if (response.ok) {
-                console.log('✅ Backend disponible, status:', response.status);
                 return true;
             }
 
@@ -311,54 +310,323 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
         setSuccessMessage(null);
 
         try {
-            console.log('🚀 Starting migration process...');
-            console.log('📤 Morse wallets:', selectedMorse.map((w: WalletOption) => w.address));
-            console.log('📥 Shannon wallet:', shannonWallet.address);
 
             // Verificar backend 
             const backendAvailable = await checkMigrationBackendAvailability();
             if (!backendAvailable) throw new Error('Migration backend service is not available');
 
-            // Preparar payload
+            // Preparar payload y detectar formato PKK
             const shannonRaw = await storageService.get<any>('shannon_wallets');
             const shannonStoredObj = Array.isArray(shannonRaw) ? shannonRaw.find((s: any) => s.id === shannonWallet.id) : null;
             let shannonSignature = shannonStoredObj?.serialized || '';
             const isMainnet = await storageService.get<string>('isMainnet') as string;
-            const migrationData = {
-                morseWallets: selectedMorse.map((w: WalletOption) => w.privateKey as string),
-                shannonAddress: {
-                    address: shannonWallet.address,
-                    signature: shannonSignature || (shannonWallet.privateKey || '')
-                },
-                network: isMainnet === 'true' ? 'mainnet' : 'beta'
-            };
 
-            // Enviar
-            const backendUrl = import.meta.env.VITE_MIGRATION_API_URL || 'http://localhost:3001';
-            const response = await fetch(`${backendUrl}/api/migration/migrate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(migrationData)
+            // Analyze Morse wallets and separate PKK armored from private key wallets
+            const morseWalletsWithFormat = selectedMorse.map((w: WalletOption) => {
+                const privateKeyData = w.privateKey as string;
+                let isPKK = false;
+                let armoredKeyData = null;
+
+                try {
+                    const parsed = JSON.parse(privateKeyData);
+                    // Detect PKK armored file format
+                    if (parsed.ppkData) {
+                        isPKK = true;
+                        // Extract armored key from ppkData
+                        try {
+                            armoredKeyData = JSON.parse(parsed.ppkData);
+
+                        } catch (e) {
+                            // Could not parse ppkData
+                        }
+                    } else if (parsed.kdf && parsed.salt && parsed.ciphertext) {
+                        isPKK = true;
+                        armoredKeyData = parsed;
+
+                    } else if (parsed.addr || parsed.priv) {
+                        // Regular JSON wallet format
+                    }
+                } catch (e) {
+                    // Direct hex private key
+                }
+
+                return {
+                    address: w.address,
+                    data: privateKeyData,
+                    isPKK: isPKK,
+                    armoredKey: armoredKeyData
+                };
             });
 
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err.message || err.error || response.statusText);
+            const pkkWallets = morseWalletsWithFormat.filter(w => w.isPKK);
+            const privateKeyWallets = morseWalletsWithFormat.filter(w => !w.isPKK);
+            
+
+
+            const backendUrl = import.meta.env.VITE_MIGRATION_API_URL || 'http://localhost:3001';
+            const network = isMainnet === 'true' ? 'mainnet' : 'beta';
+
+            // Migrate PKK armored wallets first (if any)
+            const pkkResults: any[] = [];
+            if (pkkWallets.length > 0) {
+                
+                for (let i = 0; i < pkkWallets.length; i++) {
+                    const wallet = pkkWallets[i];
+                    
+                    if (!wallet.armoredKey) {
+                        console.error(`❌ Missing armored key data for wallet ${wallet.address}`);
+                        throw new Error(`Missing armored key data for wallet ${wallet.address}`);
+                    }
+
+                    const armoredPayload = {
+                        morseAddress: wallet.address,
+                        armoredKey: wallet.armoredKey,
+                        shannonAddress: {
+                            address: shannonWallet.address,
+                            signature: shannonSignature || (shannonWallet.privateKey || '')
+                        },
+                        network: network
+                    };
+
+
+                    
+                    const response = await fetch(`${backendUrl}/api/migration/migrate-armored`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(armoredPayload)
+                    });
+
+                    let result;
+                    if (!response.ok) {
+                        try {
+                            // Try to parse the error response as JSON first
+                            const errorResponse = await response.json();
+
+                            
+                            // Check if it's an "already claimed" error using the new backend format
+                            if (errorResponse.errorType === "already_claimed" || 
+                                (errorResponse.error && errorResponse.error.includes("has already been migrated"))) {
+                                
+
+                                result = {
+                                    success: false,
+                                    alreadyMigrated: true,
+                                    error: errorResponse.error,
+                                    errorType: errorResponse.errorType,
+                                    address: wallet.address
+                                };
+                            } else {
+                                // Other structured error
+                                throw new Error(`PKK wallet ${wallet.address} migration failed: ${errorResponse.error || errorResponse.result?.error || errorResponse.message || 'Unknown error'}`);
+                            }
+                        } catch (parseError) {
+                            // If JSON parsing fails, treat as plain text error
+                            const errorText = await response.text();
+                            throw new Error(`PKK wallet ${wallet.address} migration failed - HTTP ${response.status}: ${errorText}`);
+                        }
+                    } else {
+                        result = await response.json();
+                        
+                        // Check if the response structure indicates a failure inside success response
+                        if (result.data && result.data.result && result.data.result.success === false) {
+                            
+                            // Check for "already claimed" error in the details
+                            const errorDetails = result.data.result.error || result.data.result.details || '';
+                            if (errorDetails.includes('has already been claimed')) {
+                                // Extract the clean error message
+                                const morseMatch = errorDetails.match(/morse address \\"([^"]+)\\"/);
+                                const shannonMatch = errorDetails.match(/by shannon address \\"([^"]+)\\"/);
+                                const heightMatch = errorDetails.match(/at height (\d+)/);
+                                
+                                let cleanError = "This Morse wallet has already been migrated. Each Morse wallet can only be migrated once.";
+                                let migrationDetails = null;
+                                
+                                if (morseMatch && shannonMatch && heightMatch) {
+                                    cleanError = `This Morse account (${morseMatch[1]}) has already been migrated to Shannon address ${shannonMatch[1]} at block height ${heightMatch[1]}. Each Morse account can only be migrated once.`;
+                                    migrationDetails = {
+                                        morseAddress: morseMatch[1],
+                                        shannonAddress: shannonMatch[1],
+                                        blockHeight: heightMatch[1]
+                                    };
+                                }
+                                
+                                result = {
+                                    success: false,
+                                    alreadyMigrated: true,
+                                    error: cleanError,
+                                    errorType: "already_claimed",
+                                    address: wallet.address,
+                                    migrationDetails: migrationDetails,
+                                    rawResponse: result
+                                };
+                            } else {
+                                // Other type of failure
+                                throw new Error(`PKK wallet ${wallet.address} migration failed: ${errorDetails.substring(0, 200)}...`);
+                            }
+                        } else {
+                            // PKK wallet migrated successfully
+                        }
+                    }
+                    
+                    // Store PKK results (including "already migrated" cases)
+                    pkkResults.push(result);
+
+                    // Add delay between migrations (as suggested)
+                    if (i < pkkWallets.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    }
+                }
             }
 
-            const result = await response.json();
-            console.log('Migration result:', result);
+            // Handle private key wallets (if any) - use original endpoint
+            let migrationResult = null;
+            if (privateKeyWallets.length > 0) {
+                
+                const migrationData = {
+                    morseWallets: privateKeyWallets.map(w => w.data),
+                    shannonAddress: {
+                        address: shannonWallet.address,
+                        signature: shannonSignature || (shannonWallet.privateKey || '')
+                    },
+                    network: network
+                };
+
+                const response = await fetch(`${backendUrl}/api/migration/migrate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(migrationData)
+                });
+
+                if (!response.ok) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.message || err.error || response.statusText);
+                }
+
+                migrationResult = await response.json();
+                
+                // Check if the response structure indicates a failure inside success response
+                if (migrationResult.data && migrationResult.data.result && migrationResult.data.result.success === false) {
+                    
+                    // Check for "already claimed" error in the details
+                    const errorDetails = migrationResult.data.result.error || migrationResult.data.result.details || '';
+                    if (errorDetails.includes('has already been claimed')) {
+                        // Extract the clean error message
+                        const morseMatch = errorDetails.match(/morse address \\"([^"]+)\\"/);
+                        const shannonMatch = errorDetails.match(/by shannon address \\"([^"]+)\\"/);
+                        const heightMatch = errorDetails.match(/at height (\d+)/);
+                        
+                                                 let cleanError = "This Morse wallet has already been migrated. Each Morse wallet can only be migrated once.";
+                         let migrationDetails = null;
+                         
+                         if (morseMatch && shannonMatch && heightMatch) {
+                             cleanError = `This Morse account (${morseMatch[1]}) has already been migrated to Shannon address ${shannonMatch[1]} at block height ${heightMatch[1]}. Each Morse account can only be migrated once.`;
+                             migrationDetails = {
+                                 morseAddress: morseMatch[1],
+                                 shannonAddress: shannonMatch[1],
+                                 blockHeight: heightMatch[1]
+                             };
+                         }
+                         
+                         // Transform to error format for consistent handling
+                         migrationResult = {
+                             success: false,
+                             errorType: "already_claimed",
+                             error: cleanError,
+                             migrationDetails: migrationDetails,
+                             result: {
+                                 success: false,
+                                 error: cleanError
+                             },
+                             rawResponse: migrationResult
+                         };
+                    } else {
+                        // Other type of failure - transform to error format
+                        migrationResult = {
+                            success: false,
+                            error: errorDetails.substring(0, 500) + (errorDetails.length > 500 ? '...' : ''),
+                            result: {
+                                success: false,
+                                error: errorDetails.substring(0, 500) + (errorDetails.length > 500 ? '...' : '')
+                            },
+                            rawResponse: migrationResult
+                        };
+                    }
+                }
+            }
+
+            // Process the final result (either from PKK or private key migration)
+            let result = migrationResult;
+            
+            // If no private key migration happened but PKK migrations did, create result from PKK data
+            if (!result && pkkResults.length > 0) {
+                
+                const successfulPKK = pkkResults.filter(r => !r.alreadyMigrated && r.success !== false);
+                const alreadyMigratedPKK = pkkResults.filter(r => r.alreadyMigrated);
+                
+                let message = '';
+                let hasErrors = false;
+                
+                if (successfulPKK.length > 0 && alreadyMigratedPKK.length > 0) {
+                    message = `${successfulPKK.length} PKK wallet(s) migrated successfully, ${alreadyMigratedPKK.length} were already migrated.`;
+                } else if (successfulPKK.length > 0) {
+                    message = `Successfully migrated ${successfulPKK.length} PKK armored wallet(s)`;
+                } else if (alreadyMigratedPKK.length > 0) {
+                    message = `All ${alreadyMigratedPKK.length} PKK wallet(s) were already migrated.`;
+                    hasErrors = alreadyMigratedPKK.length === pkkResults.length; // All failed = error
+                }
+                
+                result = {
+                    success: !hasErrors,
+                    errorType: hasErrors && alreadyMigratedPKK.length > 0 ? "already_claimed" : undefined,
+                    error: hasErrors ? alreadyMigratedPKK[0]?.error || alreadyMigratedPKK[0]?.result?.error : undefined,
+                    migrationDetails: hasErrors && alreadyMigratedPKK.length > 0 ? alreadyMigratedPKK[0]?.migrationDetails : undefined,
+                    alreadyMigratedAccounts: alreadyMigratedPKK.map(wallet => wallet.migrationDetails).filter(details => details !== null),
+                    result: {
+                        success: !hasErrors,
+                        message: message,
+                        error: hasErrors ? alreadyMigratedPKK[0]?.error || alreadyMigratedPKK[0]?.result?.error : undefined,
+                        mappings: pkkResults.map((pkkResult, index) => ({
+                            source: pkkWallets[index]?.address || `pkk_wallet_${index}`,
+                            destination: shannonWallet.address,
+                            status: pkkResult.alreadyMigrated ? 'already_migrated' : 'completed'
+                        }))
+                    },
+                    pkkMigrations: pkkResults.length,
+                    totalMigrations: pkkResults.length,
+                    successfulMigrations: successfulPKK.length,
+                    alreadyMigrated: alreadyMigratedPKK.length
+                };
+            }
+            
+            if (!result) {
+                throw new Error('No migration result available');
+            }
 
             // Verificar si hay un error en el resultado
             if (result.result && result.result.success === false) {
                 // Extraer mensaje de error útil
                 let errorMessage = "Migration failed";
 
-                if (result.result.error) {
-                    // Buscar el mensaje de error real, ignorando la salida del comando
+                // Check for new backend error format first
+                if (result.errorType === "already_claimed" && result.error) {
+                    // Use the clean error message directly from the new backend format
+                    errorMessage = result.error;
+                } else if (result.result && result.result.error) {
+                    // Fallback to old format parsing for backwards compatibility
                     const errorText = result.result.error;
 
-                    if (errorText.includes("Zero claimable Morse accounts found")) {
+                    if (errorText.includes("has already been claimed")) {
+                        // Extract the shannon address from the error message
+                        const shannonMatch = errorText.match(/by shannon address "([^"]+)"/);
+                        const heightMatch = errorText.match(/at height (\d+)/);
+                        const morseMatch = errorText.match(/morse address "([^"]+)"/);
+                        
+                        if (shannonMatch && heightMatch && morseMatch) {
+                            errorMessage = `This Morse wallet (${morseMatch[1]}) has already been migrated to Shannon address ${shannonMatch[1]} at block height ${heightMatch[1]}. Each Morse wallet can only be migrated once.`;
+                        } else {
+                            errorMessage = "This Morse wallet has already been migrated. Each Morse wallet can only be migrated once.";
+                        }
+                    } else if (errorText.includes("Zero claimable Morse accounts found")) {
                         errorMessage = "Zero claimable Morse accounts found in the snapshot. Your wallet may not be eligible for migration.";
                     } else if (errorText.includes("0/1 claimable Morse accounts found")) {
                         errorMessage = "No eligible Morse accounts found in the migration snapshot. Your wallet may not be included in the migration list or may have already been migrated.";
@@ -377,11 +645,57 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
                 setError(errorMessage);
                 setMigrationResult(result);
+
+                // Registrar evento de migración fallida
+                trackEvent('migration_failed', {
+                    error_message: errorMessage,
+                    morse_wallets_count: selectedMorse.length,
+                    shannon_wallet: shannonWallet.address
+                });
+
                 return;
             }
 
             setMigrationResult(result);
-            setSuccessMessage('Migration completed successfully!');
+            
+            // Create a more specific success message
+            const pkkCount = pkkResults.length;
+            const privateKeyCount = privateKeyWallets.length;
+            const successfulPKK = pkkResults.filter(r => !r.alreadyMigrated && r.success !== false);
+            const alreadyMigratedPKK = pkkResults.filter(r => r.alreadyMigrated);
+            
+            let successMessage = 'Migration completed successfully!';
+            
+            if (pkkCount > 0 && privateKeyCount > 0) {
+                let parts = [];
+                if (successfulPKK.length > 0) parts.push(`${successfulPKK.length} PKK wallet(s) migrated`);
+                if (alreadyMigratedPKK.length > 0) parts.push(`${alreadyMigratedPKK.length} PKK wallet(s) already migrated`);
+                parts.push(`${privateKeyCount} private key wallet(s) processed`);
+                successMessage = `Migration completed! ${parts.join(', ')}.`;
+            } else if (pkkCount > 0) {
+                if (successfulPKK.length > 0 && alreadyMigratedPKK.length > 0) {
+                    successMessage = `Migration completed! ${successfulPKK.length} PKK wallet(s) migrated successfully, ${alreadyMigratedPKK.length} were already migrated.`;
+                } else if (successfulPKK.length > 0) {
+                    successMessage = `Migration completed! ${successfulPKK.length} PKK armored wallet(s) migrated successfully.`;
+                } else if (alreadyMigratedPKK.length > 0) {
+                    successMessage = `All ${alreadyMigratedPKK.length} PKK wallet(s) were already migrated.`;
+                }
+            } else if (privateKeyCount > 0) {
+                successMessage = `Migration completed! ${privateKeyCount} private key wallet(s) migrated successfully.`;
+            }
+            
+            setSuccessMessage(successMessage);
+
+            // Registrar evento de migración exitosa
+            trackEvent('migration_success', {
+                morse_wallets_count: selectedMorse.length,
+                shannon_wallet: shannonWallet.address,
+                accounts_migrated: result.result?.mappings?.length || 0,
+                pkk_wallets_migrated: pkkResults.length,
+                private_key_wallets_migrated: privateKeyWallets.length,
+                migration_type: pkkCount > 0 && privateKeyCount > 0 ? 'mixed' : (pkkCount > 0 ? 'pkk_only' : 'private_key_only')
+            });
+
         } catch (err: any) {
             console.error('Migration error:', err);
 
@@ -390,7 +704,24 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
 
             // Detectar errores comunes y mostrar mensajes más claros
             if (typeof errorMessage === 'string') {
-                if (errorMessage.includes('Zero claimable Morse accounts')) {
+                if (errorMessage.includes('has already been migrated to Shannon address') || 
+                    errorMessage.includes('has already been claimed')) {
+                    // For new backend format, use the message as-is since it's already clean
+                    // For old format, parse it
+                    if (!errorMessage.includes('has already been migrated to Shannon address')) {
+                        // Old format - extract the shannon address from the error message
+                        const shannonMatch = errorMessage.match(/by shannon address "([^"]+)"/);
+                        const heightMatch = errorMessage.match(/at height (\d+)/);
+                        const morseMatch = errorMessage.match(/morse address "([^"]+)"/);
+                        
+                        if (shannonMatch && heightMatch && morseMatch) {
+                            errorMessage = `This Morse wallet (${morseMatch[1]}) has already been migrated to Shannon address ${shannonMatch[1]} at block height ${heightMatch[1]}. Each Morse wallet can only be migrated once.`;
+                        } else {
+                            errorMessage = "This Morse wallet has already been migrated. Each Morse wallet can only be migrated once.";
+                        }
+                    }
+                    // If it already contains the clean format, use as-is
+                } else if (errorMessage.includes('Zero claimable Morse accounts')) {
                     // Mostrar el mensaje exacto sin traducir
                     errorMessage = 'Zero claimable Morse accounts found in the snapshot. Check the logs and the input file before trying again.';
                 } else if (errorMessage.includes('0/1 claimable Morse accounts found')) {
@@ -401,6 +732,15 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
             }
 
             setError(errorMessage);
+
+            // Registrar evento de error en migración
+            trackEvent('migration_failed', {
+                error_message: errorMessage,
+                morse_wallets_count: selectedMorse.length,
+                shannon_wallet: shannonWallet.address,
+                error_type: 'request_error'
+            });
+
         } finally {
             setIsLoading(false);
         }
@@ -675,6 +1015,49 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                                         "Unknown error occurred during migration"
                                                     )}
                                             </p>
+                                        </div>
+                                    )}
+
+                                    {/* Show migration details for already-migrated accounts */}
+                                    {(migrationResult.errorType === "already_claimed" && 
+                                      (migrationResult.migrationDetails || (migrationResult.alreadyMigratedAccounts && migrationResult.alreadyMigratedAccounts.length > 0))) && (
+                                        <div className="p-3 bg-amber-900/20 rounded-lg border border-amber-700/50">
+                                            <p className="text-xs text-gray-400 mb-3">Migration History</p>
+                                            <div className="space-y-3">
+                                                {migrationResult.migrationDetails && (
+                                                    <div className="space-y-2">
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-xs text-gray-400">Morse Account:</span>
+                                                            <span className="text-xs text-amber-300 font-mono">{migrationResult.migrationDetails.morseAddress}</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-xs text-gray-400">Migrated to:</span>
+                                                            <span className="text-xs text-amber-300 font-mono">{migrationResult.migrationDetails.shannonAddress}</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-xs text-gray-400">Block Height:</span>
+                                                            <span className="text-xs text-amber-300 font-mono">#{migrationResult.migrationDetails.blockHeight}</span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                                                                 {migrationResult.alreadyMigratedAccounts && migrationResult.alreadyMigratedAccounts.length > 0 && 
+                                                 migrationResult.alreadyMigratedAccounts.map((account: any, index: number) => (
+                                                    <div key={index} className="space-y-2 border-t border-amber-700/30 pt-2 first:border-t-0 first:pt-0">
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-xs text-gray-400">Morse Account:</span>
+                                                            <span className="text-xs text-amber-300 font-mono">{account.morseAddress}</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-xs text-gray-400">Migrated to:</span>
+                                                            <span className="text-xs text-amber-300 font-mono">{account.shannonAddress}</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-start">
+                                                            <span className="text-xs text-gray-400">Block Height:</span>
+                                                            <span className="text-xs text-amber-300 font-mono">#{account.blockHeight}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
                                         </div>
                                     )}
 

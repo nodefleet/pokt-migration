@@ -17,6 +17,8 @@ import { Transaction, NetworkType } from './controller/WalletManager';
 import { AnimatePresence } from 'framer-motion';
 import { storageService } from './controller/storage.service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+// Importar Firebase Analytics
+import { analytics, trackEvent } from './firebase';
 import { DEBUG_CONFIG } from './controller/config';
 
 // Ya no es necesario configurar Buffer aquí, ya está en polyfills.ts
@@ -37,6 +39,13 @@ const App: React.FC = () => {
     const [isMainnet, setIsMainnet] = useState<boolean>(true);
     const [networkError, setNetworkError] = useState<string | null>(null);
     const [walletService] = useState(() => new WalletService());
+
+    // Registrar evento de inicialización de la aplicación
+    useEffect(() => {
+        trackEvent('app_initialized', {
+            timestamp: new Date().toISOString()
+        });
+    }, []);
 
     // Función para cargar balance y transacciones
     const loadWalletData = async (address: string) => {
@@ -333,8 +342,23 @@ const App: React.FC = () => {
 
             navigate('/wallet');
 
+            trackEvent('wallet_imported', {
+                network_type: walletInfo.network,
+                is_mainnet: walletInfo.isMainnet,
+                from_storage: fromStorage
+            });
+
             return { address: walletInfo.address, network: walletInfo.network };
         } catch (error) {
+            console.error('❌ Error importing wallet:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            // Registrar evento de error en importación
+            trackEvent('wallet_import_failed', {
+                network_type: network || networkType,
+                is_mainnet: isMainnet,
+                from_storage: fromStorage,
+                error: errorMessage
+            });
             DEBUG_CONFIG.error('❌ Error importing wallet:', error);
             throw error;
         }
@@ -354,31 +378,30 @@ const App: React.FC = () => {
 
             DEBUG_CONFIG.log(`🎯 Target configuration: ${targetNetwork} ${targetIsMainnet ? 'mainnet' : 'testnet'}`);
 
+            // Track wallet creation event
+            trackEvent('wallet_created', {
+                network_type: targetNetwork,
+                is_mainnet: targetIsMainnet
+            });
+
             // Usar el método createWallet del walletService
             const walletInfo = await walletService.createWallet(password, targetNetwork, targetIsMainnet);
             DEBUG_CONFIG.log(`✅ Wallet created:`, walletInfo);
 
-            // Check if we already have an active wallet
-            if (!state.walletAddress) {
-                // No active wallet - switch to the new wallet (normal first-time flow)
-                DEBUG_CONFIG.log('🎯 No active wallet - switching to newly created wallet');
-                setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
-                setNetworkType(walletInfo.network);
-                setIsMainnet(walletInfo.isMainnet);
-                
-                DEBUG_CONFIG.log(`🔄 App state updated - Address: ${walletInfo.address}, Network: ${walletInfo.network}, IsMainnet: ${walletInfo.isMainnet}`);
+            // Always switch to the newly created wallet (better UX)
+            DEBUG_CONFIG.log('🎯 Switching to newly created wallet');
+            setState(prev => ({ ...prev, walletAddress: walletInfo.address }));
+            setNetworkType(walletInfo.network);
+            setIsMainnet(walletInfo.isMainnet);
+            
+            DEBUG_CONFIG.log(`🔄 App state updated - Address: ${walletInfo.address}, Network: ${walletInfo.network}, IsMainnet: ${walletInfo.isMainnet}`);
 
-                // Load wallet data before navigating
-                DEBUG_CONFIG.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
-                await loadWalletData(walletInfo.address);
+            // Load wallet data before navigating
+            DEBUG_CONFIG.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
+            await loadWalletData(walletInfo.address);
 
-                navigate('/wallet');
-            } else {
-                // Keep the current wallet active but show success message
-                DEBUG_CONFIG.log(`🎯 ${targetNetwork.toUpperCase()} wallet created successfully! Address: ${walletInfo.address}`);
-                DEBUG_CONFIG.log(`📍 Keeping current ${networkType.toUpperCase()} wallet active: ${state.walletAddress}`);
-                DEBUG_CONFIG.log(`💡 You can now switch between wallets using the wallet selector`);
-            }
+            // Always navigate to dashboard after creating a wallet
+            navigate('/wallet');
 
             // Trigger wallet selector refresh (always fire this event)
             window.dispatchEvent(new CustomEvent('wallets_updated', {
@@ -392,8 +415,20 @@ const App: React.FC = () => {
             }));
             DEBUG_CONFIG.log('✅ Migration prerequisites refresh event triggered');
 
+            // Small delay to ensure storage and events have propagated
+            await new Promise(resolve => setTimeout(resolve, 100));
+
             return { address: walletInfo.address, network: walletInfo.network };
         } catch (error) {
+            console.error('❌ Error creating wallet:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            setNetworkError(`Error creating wallet: ${errorMessage}`);
+
+            // Registrar evento de error en creación
+            trackEvent('wallet_creation_failed', {
+                error: errorMessage
+            });
+
             DEBUG_CONFIG.error('❌ Error creating wallet:', error);
             throw error;
         }
@@ -423,7 +458,6 @@ const App: React.FC = () => {
                     setBalance('0');
                     setTransactions([]);
                     setNetworkError(null);
-                    
                     // Navigate to home page
                     navigate('/');
                 }

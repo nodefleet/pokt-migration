@@ -275,7 +275,8 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                     network: "shannon",
                     timestamp: timestamp,
                     parsed: { address: importResult?.address || '' },
-                    mnemonic: inputText
+                    mnemonic: inputText,
+                    walletType: 'mnemonic' // Mark as imported from mnemonic
                 };
             } else {
                 // Para otros formatos, mantener el comportamiento original
@@ -316,7 +317,8 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                         network: "shannon",
                         timestamp: timestamp,
                         parsed: { address: importResult?.address || '' },
-                        mnemonic: inputText
+                        mnemonic: inputText,
+                        walletType: 'mnemonic' // Mark as imported from mnemonic
                     });
                 }
             } else {

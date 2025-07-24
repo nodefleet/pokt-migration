@@ -121,32 +121,43 @@ export class WalletService {
             // Guardar en localStorage con la clave privada
             await storageService.set(STORAGE_KEYS.WALLET_ADDRESS, walletInfo.address);
 
-            // Guardar wallet completa con clave privada
-            // if (network === 'shannon') {
-            //     await storageService.set('shannon_wallet', {
-            //         serialized: serializedWallet,
-            //         privateKey: privateKey, // Guardar la clave privada
-            //         network: 'shannon',
-            //         timestamp: Date.now(),
-            //         parsed: { address }
-            //     });
+            // Guardar wallet completa con clave privada para que el wallet selector la detecte
+            if (network === 'shannon') {
+                const timestamp = Date.now();
+                const storageData = {
+                    serialized: walletInfo.privateKey, // Usar la clave privada/mnemónico
+                    privateKey: walletInfo.privateKey, // Guardar la clave privada
+                    network: 'shannon',
+                    timestamp: timestamp,
+                    parsed: { address: walletInfo.address },
+                    mnemonic: walletInfo.privateKey, // También como mnemónico
+                    walletType: 'mnemonic' // Mark as created from mnemonic
+                };
 
-            //     // También guardar en el array de wallets si existe
-            //     const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
-            //     if (Array.isArray(shannonWallets)) {
-            //         // Añadir nueva wallet
-            //         shannonWallets.push({
-            //             id: `shannon_${Date.now()}`,
-            //             serialized: serializedWallet,
-            //             privateKey: privateKey, // Guardar la clave privada
-            //             network: 'shannon',
-            //             timestamp: Date.now(),
-            //             parsed: { address }
-            //         });
+                // Guardar como objeto individual
+                await storageService.set('shannon_wallet', storageData);
 
-            //         await storageService.set('shannon_wallets', shannonWallets);
-            //     }
-            // }
+                // También guardar en el array de wallets
+                const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
+                const walletArrayItem = {
+                    id: `shannon_${timestamp}`,
+                    ...storageData
+                };
+                
+                // Verificar que no esté duplicada
+                const isDuplicate = shannonWallets.some(w => w.parsed?.address === walletInfo.address);
+                if (!isDuplicate) {
+                    shannonWallets.push(walletArrayItem);
+                    await storageService.set('shannon_wallets', shannonWallets);
+                }
+
+                DEBUG_CONFIG.log('✅ Shannon wallet saved to storage for wallet selector');
+                
+                // Trigger storage update event for wallet selector
+                window.dispatchEvent(new CustomEvent('storage_updated', {
+                    detail: { key: 'shannon_wallet', value: JSON.stringify(storageData) }
+                }));
+            }
 
             // Obtener balance
             const balance = await this.getBalance(walletInfo.address);
@@ -333,7 +344,8 @@ export class WalletService {
                     serialized: cleanPrivateKey, // También en serialized para compatibilidad
                     network: 'shannon',
                     timestamp: Date.now(),
-                    parsed: { address }
+                    parsed: { address },
+                    walletType: 'private_key' // Mark as imported from private key
                 });
                 DEBUG_CONFIG.log('✅ Private key saved in shannon_wallet object');
 
@@ -348,6 +360,7 @@ export class WalletService {
                         shannonWallets[existingIndex].privateKey = cleanPrivateKey;
                         shannonWallets[existingIndex].serialized = cleanPrivateKey;
                         shannonWallets[existingIndex].timestamp = Date.now();
+                        shannonWallets[existingIndex].walletType = 'private_key';
                     } else {
                         // Añadir nueva wallet
                         shannonWallets.push({
@@ -356,7 +369,8 @@ export class WalletService {
                             serialized: cleanPrivateKey,
                             network: 'shannon',
                             timestamp: Date.now(),
-                            parsed: { address }
+                            parsed: { address },
+                            walletType: 'private_key' // Mark as imported from private key
                         });
                     }
 
@@ -916,7 +930,7 @@ export class WalletService {
      */
     async getShannonPrivateKey(): Promise<string | null> {
         try {
-            // Intentar obtener la wallet de Shannon del storage
+            // Get Shannon wallet from storage
             const shannonWallet = await storageService.get<any>('shannon_wallet');
 
             if (!shannonWallet) {
@@ -924,38 +938,135 @@ export class WalletService {
                 return null;
             }
 
-            // Verificar si hay una clave privada directa en el objeto
-            if (shannonWallet.privateKey) {
-                DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en el objeto wallet');
-                return shannonWallet.privateKey;
+            // If wallet was imported from private key, explain that no mnemonic is available
+            if (shannonWallet.walletType === 'private_key') {
+                console.log('⚠️ Wallet was imported from hex private key - no mnemonic available');
+                return "⚠️ No mnemonic phrase available\n\nThis wallet was imported using a hex private key, not a mnemonic phrase.\n\nMnemonic phrases can only be shown for wallets that were:\n• Created using wallet generation\n• Imported using a 12/24-word mnemonic phrase\n\nYour wallet is secure, but the original mnemonic phrase is not recoverable from a hex private key.";
             }
 
-            // Verificar si está en el campo serialized como clave privada directa (64 caracteres hex)
-            if (shannonWallet.serialized && this.isShannonPrivateKey(shannonWallet.serialized)) {
-                DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en formato hex');
-                return shannonWallet.serialized;
+            // First, check if we already have the mnemonic stored
+            if (shannonWallet.mnemonic) {
+                const words = shannonWallet.mnemonic.trim().split(/\s+/);
+                if (words.length === 12 || words.length === 24) {
+                    console.log('✅ Found Shannon mnemonic phrase in wallet.mnemonic');
+                    return shannonWallet.mnemonic;
+                }
             }
 
-            // Intentar buscar en shannon_wallets también
-            const shannonWallets = await storageService.get<any[]>('shannon_wallets');
-            if (Array.isArray(shannonWallets) && shannonWallets.length > 0) {
-                // Buscar en cada wallet si tiene privateKey
-                for (const wallet of shannonWallets) {
-                    if (wallet.privateKey && this.isShannonPrivateKey(wallet.privateKey)) {
-                        DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en shannon_wallets');
-                        return wallet.privateKey;
+            // Check if serialized field contains mnemonic (for wallets stored as mnemonic)
+            if (shannonWallet.serialized) {
+                const words = shannonWallet.serialized.trim().split(/\s+/);
+                if (words.length === 12 || words.length === 24) {
+                    console.log('✅ Found Shannon mnemonic phrase in wallet.serialized');
+                    return shannonWallet.serialized;
+                }
+
+                // Check if it's encrypted JSON format (starts with '{')
+                if (shannonWallet.serialized.trim().startsWith('{')) {
+                    console.log('🔍 DEBUG: Found encrypted JSON wallet data, attempting decryption...');
+                    
+                    try {
+                        const { decryptWallet } = await import('./ShannonWallet');
+                        
+                        // Try multiple passwords commonly used
+                        const passwordsToTry = [
+                            "CREA",           // Default password
+                            "",               // Empty password
+                            "password",       // Common password
+                            "123456",         // Common password
+                            "wallet"          // Common password
+                        ];
+
+                        for (const password of passwordsToTry) {
+                            try {
+                                console.log(`🔓 Trying password: "${password}"`);
+                                const walletInfo = await decryptWallet(shannonWallet.serialized, password);
+                                if (walletInfo.mnemonic) {
+                                    console.log(`✅ Successfully decrypted wallet with password "${password}" and extracted mnemonic`);
+                                    
+                                    // Update storage with the extracted mnemonic for future use
+                                    await storageService.set('shannon_wallet', {
+                                        ...shannonWallet,
+                                        mnemonic: walletInfo.mnemonic
+                                    });
+                                    
+                                    return walletInfo.mnemonic;
+                                }
+                            } catch (passwordError) {
+                                console.log(`❌ Password "${password}" failed:`, passwordError instanceof Error ? passwordError.message : String(passwordError));
+                            }
+                        }
+                        
+                        console.warn('⚠️ Could not decrypt wallet with any of the tried passwords');
+                    } catch (decryptError) {
+                        console.warn('⚠️ General decryption error:', decryptError);
                     }
-
-                    if (wallet.serialized && this.isShannonPrivateKey(wallet.serialized)) {
-                        DEBUG_CONFIG.log('✅ Encontrada clave privada Shannon en formato hex en shannon_wallets');
-                        return wallet.serialized;
+                } else {
+                    // Check if it's a hex private key (64 characters)
+                    const cleanHex = shannonWallet.serialized.trim();
+                    if (cleanHex.length === 64 && /^[0-9a-fA-F]+$/.test(cleanHex)) {
+                        console.log('🔍 DEBUG: Detected 64-char hex private key in serialized field');
+                        console.log('⚠️ This wallet was imported from a hex private key - no mnemonic available');
+                        return "⚠️ No mnemonic phrase available\n\nThis wallet was imported using a hex private key, not a mnemonic phrase.\n\nMnemonic phrases can only be shown for wallets that were:\n• Created using wallet generation\n• Imported using a 12/24-word mnemonic phrase\n\nYour wallet is secure, but the original mnemonic phrase is not recoverable from a hex private key.";
+                    } else {
+                        console.log('🔍 DEBUG: Serialized data is not recognized format:', {
+                            dataPreview: shannonWallet.serialized.substring(0, 50) + '...',
+                            length: shannonWallet.serialized.length,
+                            startsWithBrace: shannonWallet.serialized.startsWith('{'),
+                            isHex: /^[0-9a-fA-F]+$/.test(cleanHex)
+                        });
                     }
                 }
             }
 
-            // Si no encontramos la clave privada, devolvemos el objeto wallet serializado
-            console.warn('⚠️ No se encontró clave privada Shannon, devolviendo objeto wallet');
-            return JSON.stringify(shannonWallet, null, 2);
+            // Check privateKey field for mnemonic
+            if (shannonWallet.privateKey) {
+                const words = shannonWallet.privateKey.trim().split(/\s+/);
+                if (words.length === 12 || words.length === 24) {
+                    console.log('✅ Found Shannon mnemonic phrase in wallet.privateKey');
+                    return shannonWallet.privateKey;
+                }
+            }
+
+            // Try shannon_wallets array as well
+            const shannonWallets = await storageService.get<any[]>('shannon_wallets');
+            if (Array.isArray(shannonWallets) && shannonWallets.length > 0) {
+                for (const wallet of shannonWallets) {
+                    // Check mnemonic field
+                    if (wallet.mnemonic) {
+                        const words = wallet.mnemonic.trim().split(/\s+/);
+                        if (words.length === 12 || words.length === 24) {
+                            console.log('✅ Found Shannon mnemonic phrase in shannon_wallets array');
+                            return wallet.mnemonic;
+                        }
+                    }
+
+                    // Check serialized field for mnemonic
+                    if (wallet.serialized) {
+                        const words = wallet.serialized.trim().split(/\s+/);
+                        if (words.length === 12 || words.length === 24) {
+                            console.log('✅ Found Shannon mnemonic phrase in shannon_wallets serialized');
+                            return wallet.serialized;
+                        }
+
+                        // Try to decrypt this wallet too
+                        try {
+                            const { decryptWallet } = await import('./ShannonWallet');
+                            const walletInfo = await decryptWallet(wallet.serialized, "CREA");
+                            if (walletInfo.mnemonic) {
+                                console.log('✅ Successfully decrypted wallet from array and extracted mnemonic');
+                                return walletInfo.mnemonic;
+                            }
+                        } catch (decryptError) {
+                            // Continue to next wallet
+                        }
+                    }
+                }
+            }
+
+            // If we reach here, no mnemonic was found
+            console.warn('⚠️ No mnemonic found for Shannon wallet');
+            return "⚠️ Mnemonic not found\n\nThis wallet appears to be created from a mnemonic, but the mnemonic phrase could not be extracted.\n\nThis might happen with:\n• Older wallet imports with different passwords\n• Corrupted wallet data\n• Wallets imported in incompatible formats\n\nThe wallet is still functional, but the mnemonic phrase is not available for display.";
         } catch (error) {
             console.error('❌ Error obteniendo clave privada Shannon:', error);
             return null;
@@ -982,6 +1093,8 @@ export class WalletService {
             return null;
         }
     }
+
+
 
     /**
      * Obtiene todas las wallets disponibles con sus datos

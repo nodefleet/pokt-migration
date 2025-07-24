@@ -396,27 +396,40 @@ export class WalletManager {
                     DEBUG_CONFIG.log(`✅ Shannon balance: ${balance}`);
                     return balance;
                 } catch (error) {
-                    console.error('Error getting balance from Shannon RPC:', error);
-                    console.log('Falling back to PokTradar API...');
+                    DEBUG_CONFIG.log('Shannon RPC failed, returning 0 balance for new wallet:', error instanceof Error ? error.message : String(error));
+                    console.log(`✅ Shannon wallet created successfully - balance will be 0 POKT until RPC connection is available`);
+                    return "0"; // Return 0 for Shannon if RPC fails, don't try PokTradar
                 }
             }
 
-            // Consultar directamente a la API de PokTradar como respaldo
-            const url = `https://poktradar.io/api/address/balance?address=${address}`;
-            DEBUG_CONFIG.log(`🔍 Fetching balance from PokTradar API: ${url}`);
+            // PokTradar API solo para Morse wallets
+            if (this.networkType === 'morse') {
+                const url = `https://poktradar.io/api/address/balance?address=${address}`;
+                DEBUG_CONFIG.log(`🔍 Fetching Morse balance from PokTradar API: ${url}`);
 
-            // API permite cualquier origen
-            const response = await fetch(url);
+                // API permite cualquier origen
+                const response = await fetch(url);
 
-            if (!response.ok) {
-                throw new Error(`Error getting balance: ${response.status} ${response.statusText}`);
+                if (!response.ok) {
+                    // 404 es esperado para direcciones nuevas que nunca han tenido transacciones
+                    if (response.status === 404) {
+                        DEBUG_CONFIG.log(`📍 Address not found in PokTradar (new address): ${address} - returning 0 balance`);
+                        console.log(`✅ New wallet address detected - balance is 0 POKT (expected for new wallets)`);
+                        return "0";
+                    }
+                    throw new Error(`Error getting balance: ${response.status} ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                // El API de PokTradar devuelve el balance en el campo balance
+                const balance = data.balance || "0";
+                DEBUG_CONFIG.log(`✅ Balance from PokTradar: ${balance}`);
+                return balance;
             }
 
-            const data = await response.json();
-            // El API de PokTradar devuelve el balance en el campo balance
-            const balance = data.balance || "0";
-            DEBUG_CONFIG.log(`✅ Balance from PokTradar: ${balance}`);
-            return balance;
+            // Si llegamos aquí, no hay método disponible para obtener balance
+            DEBUG_CONFIG.log(`⚠️ No balance fetching method available for ${this.networkType}`);
+            return "0";
         } catch (error) {
             console.error('Error getting balance:', error);
             return "0";
