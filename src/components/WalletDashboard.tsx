@@ -102,6 +102,9 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
     const navigate = useNavigate();
     // NOTE: Do NOT call onLogout directly from parent or on button click. Only call from handleLogoutConfirm/modal.
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    
+    // Shannon wallet mnemonic reminder popup state
+    const [showShannonMnemonicReminder, setShowShannonMnemonicReminder] = useState(false);
 
     const handleLogoutClick = () => {
         setShowLogoutConfirm(true);
@@ -278,6 +281,30 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
             window.removeEventListener('wallet_balance_updated', handleWalletDataUpdate as EventListener);
         };
     }, [fetchBalanceAndTransactions, walletAddress, isMainnet]);
+
+    // Check for Shannon mnemonic reminder flag on component mount
+    useEffect(() => {
+        const checkMnemonicReminder = async () => {
+            try {
+                const shouldShowReminder = await storageService.get<boolean>('show_shannon_mnemonic_reminder');
+                if (shouldShowReminder && network === 'shannon') {
+                    DEBUG_CONFIG.log('🔔 Showing Shannon mnemonic reminder on wallet dashboard');
+                    setShowShannonMnemonicReminder(true);
+                    // Clear the flag so it doesn't show again
+                    await storageService.remove('show_shannon_mnemonic_reminder');
+                    
+                    // Auto-hide after 15 seconds
+                    setTimeout(() => {
+                        setShowShannonMnemonicReminder(false);
+                    }, 15000);
+                }
+            } catch (error) {
+                console.error('Error checking mnemonic reminder flag:', error);
+            }
+        };
+        
+        checkMnemonicReminder();
+    }, [network]); // Re-run if network changes
 
     // Función para intentar reconectar manualmente
     const handleReconnect = async () => {
@@ -580,6 +607,48 @@ const WalletDashboard: React.FC<WalletDashboardProps> = ({
                     </div>
                 </div>
             </header>
+
+            {/* Shannon Mnemonic Reminder Popup */}
+            {showShannonMnemonicReminder && (
+                <motion.div
+                    className="container mx-auto p-4"
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                >
+                    <div className="bg-green-900/50 text-green-300 p-6 rounded-xl border border-green-700/50 flex items-start">
+                        <i className="fas fa-check-circle text-green-400 text-2xl mr-4 mt-1"></i>
+                        <div className="flex-1">
+                            <h3 className="font-semibold mb-2 text-xl">Shannon Wallet Created Successfully! 🎉</h3>
+                            <div className="bg-green-800/30 border border-green-700 rounded-lg p-4 mb-3">
+                                <p className="text-green-200 font-semibold mb-2">
+                                    <i className="fas fa-exclamation-triangle mr-2"></i>
+                                    IMPORTANT: Save Your Secret Phrase Now!
+                                </p>
+                                <ul className="text-green-200 text-sm space-y-1 list-disc pl-5">
+                                    <li>Your 24-word secret phrase is the ONLY way to recover your wallet</li>
+                                    <li>Write it down on paper and store it securely offline</li>
+                                    <li>Never share your secret phrase with anyone</li>
+                                    <li>Consider making multiple backup copies in safe locations</li>
+                                </ul>
+                            </div>
+                            <p className="text-sm text-green-300 mb-2">
+                                You can view your secret phrase by clicking the wallet selector above and selecting "View Secret Phrase".
+                            </p>
+                            <p className="text-xs text-green-400/80 mb-3">
+                                This message will auto-dismiss in 15 seconds.
+                            </p>
+                            <button
+                                onClick={() => setShowShannonMnemonicReminder(false)}
+                                className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-lg text-sm transition-colors"
+                            >
+                                I understand, dismiss this message
+                            </button>
+                        </div>
+                    </div>
+                </motion.div>
+            )}
+
             {/* Logout Confirmation Modal (always rendered at root) */}
             <AnimatePresence>
                 {showLogoutConfirm && (

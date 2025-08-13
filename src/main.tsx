@@ -406,11 +406,13 @@ const App: React.FC = () => {
             DEBUG_CONFIG.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
             await loadWalletData(walletInfo.address);
 
-            // For Shannon wallets, don't auto-navigate - let the mnemonic reminder handle navigation
+            // For Shannon wallets, set flag to show mnemonic reminder and navigate to dashboard
             // For other wallet types, navigate immediately
             if (targetNetwork === 'shannon') {
-                DEBUG_CONFIG.log('🔔 Shannon wallet created - will show mnemonic reminder, no auto-navigation');
-                // Don't navigate automatically for Shannon - let the mnemonic reminder popup handle it
+                DEBUG_CONFIG.log('🔔 Shannon wallet created - setting mnemonic reminder flag and navigating to dashboard');
+                // Set flag to show mnemonic reminder on the wallet dashboard
+                await storageService.set('show_shannon_mnemonic_reminder', true);
+                navigate('/wallet');
             } else {
                 // Navigate immediately for non-Shannon wallets
                 navigate('/wallet');

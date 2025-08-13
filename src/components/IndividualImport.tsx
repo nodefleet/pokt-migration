@@ -34,7 +34,6 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     // Shannon wallet requirement workflow
     const [hasShannonWallet, setHasShannonWallet] = useState(false);
     const [checkingShannon, setCheckingShannon] = useState(true);
-    const [showShannonCreatedMessage, setShowShannonCreatedMessage] = useState(false);
 
     const navigate = useNavigate();
     const location = useLocation();
@@ -85,12 +84,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
         };
     }, []);
 
-    // Clear success message when component unmounts
-    useEffect(() => {
-        return () => {
-            setShowShannonCreatedMessage(false);
-        };
-    }, []);
+
 
     // Leer parámetros de la URL
     useEffect(() => {
@@ -301,9 +295,6 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     const handleShannonImport = async () => {
         setError(null);
         
-        // Clear any existing success message when starting import
-        setShowShannonCreatedMessage(false);
-        
         if (!shannonInput.trim()) {
             setError('Please enter a valid value: mnemonic, private key or JSON');
             return;
@@ -395,11 +386,6 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             // Reset
             setShannonInput('');
             
-            // Hide create message if visible (user imported instead of created)
-            if (showShannonCreatedMessage) {
-                setShowShannonCreatedMessage(false);
-            }
-            
             console.log("Shannon Wallet imported successfully via main.tsx");
         } catch (error: any) {
             console.error('Error importing Shannon wallet:', error);
@@ -411,9 +397,6 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
     const handleCreateWallet = async (password: string) => {
         setError(null);
-        
-        // Clear any existing success message when starting new creation
-        setShowShannonCreatedMessage(false);
         
         if (!password) {
             setError('Please enter a password');
@@ -434,14 +417,11 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             // Recheck Shannon wallets after successful creation
             await checkShannonWallets();
             
-            // Show the mnemonic security reminder message
-            setShowShannonCreatedMessage(true);
+            // Set flag for mnemonic reminder to show on wallet dashboard
+            await storageService.set('show_shannon_mnemonic_reminder', true);
             
-            // Auto-hide the message after 15 seconds and navigate to dashboard
-            setTimeout(() => {
-                setShowShannonCreatedMessage(false);
-                navigate('/wallet');
-            }, 15000);
+            // Navigate to wallet dashboard where the reminder will be shown
+            navigate('/wallet');
         } catch (error: any) {
             console.error('Error creating Shannon wallet:', error);
             setError(error.message || 'Error creating Shannon wallet');
@@ -533,55 +513,7 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 </motion.div>
             )}
 
-            {/* Shannon Created Success Message */}
-            {showShannonCreatedMessage && (
-                <motion.div
-                    className="mb-6 bg-green-900/50 text-green-300 p-6 rounded-xl border border-green-700/50 flex items-start"
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4 }}
-                >
-                    <i className="fas fa-check-circle text-green-400 text-2xl mr-4 mt-1"></i>
-                    <div className="flex-1">
-                        <h3 className="font-semibold mb-2 text-xl">Shannon Wallet Created Successfully! 🎉</h3>
-                        <div className="bg-green-800/30 border border-green-700 rounded-lg p-4 mb-3">
-                            <p className="text-green-200 font-semibold mb-2">
-                                <i className="fas fa-exclamation-triangle mr-2"></i>
-                                IMPORTANT: Save Your Secret Phrase Now!
-                            </p>
-                            <ul className="text-green-200 text-sm space-y-1 list-disc pl-5">
-                                <li>Your 24-word secret phrase is the ONLY way to recover your wallet</li>
-                                <li>Write it down on paper and store it securely offline</li>
-                                <li>Never share your secret phrase with anyone</li>
-                                <li>Consider making multiple backup copies in safe locations</li>
-                            </ul>
-                        </div>
-                        <p className="text-sm text-green-300 mb-2">
-                            You can view your secret phrase anytime by clicking the wallet selector above and selecting "View Secret Phrase".
-                        </p>
-                        <p className="text-xs text-green-400/80">
-                            This message will auto-dismiss and redirect to your dashboard in 15 seconds.
-                        </p>
-                        <div className="mt-3 flex gap-3">
-                            <button
-                                onClick={() => {
-                                    setShowShannonCreatedMessage(false);
-                                    navigate('/wallet');
-                                }}
-                                className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-lg text-sm transition-colors"
-                            >
-                                Continue to Dashboard
-                            </button>
-                            <button
-                                onClick={() => setShowShannonCreatedMessage(false)}
-                                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg text-sm transition-colors"
-                            >
-                                Stay on Import Page
-                            </button>
-                        </div>
-                    </div>
-                </motion.div>
-            )}
+
 
             {/* Morse Red Warning Banner */}
             {showMorseWarning && (
