@@ -94,19 +94,31 @@ export class WalletService {
      */
     async createWallet(password: string, network: NetworkType = 'shannon', isMainnet: boolean = false): Promise<WalletInfo> {
         try {
+            DEBUG_CONFIG.log(`🔄 WalletService.createWallet called with: network=${network}, isMainnet=${isMainnet}`);
+            
             // Guardar configuración de red
             this.networkType = network;
             this.isMainnet = isMainnet;
             storageService.set(STORAGE_KEYS.NETWORK_TYPE, network);
-            // NO SOBRESCRIBIR la selección manual del usuario
-            // storageService.set(STORAGE_KEYS.NETWORK, isMainnet === true ? 'mainnet' : 'testnet');
+            
+            DEBUG_CONFIG.log(`🔍 WalletService: networkType set to ${this.networkType}, isMainnet set to ${this.isMainnet}`);
 
             // CORREGIR: El WalletManager espera isTestnet, no isMainnet
             const isTestnet = !isMainnet; // Negar directamente - más simple y confiable
             DEBUG_CONFIG.log(`🔍 DEBUG createWallet: isMainnet=${isMainnet}, isTestnet=${isTestnet}`);
 
+            // Switch network before creating wallet
+            DEBUG_CONFIG.log(`🔄 Switching to network: ${network}, isTestnet: ${isTestnet}`);
+            await this.walletManager.switchNetwork(network, isTestnet);
+
             // Crear wallet usando el WalletManager
+            DEBUG_CONFIG.log(`🔄 Calling walletManager.createWallet with password`);
             const walletInfo = await this.walletManager.createWallet(password);
+            DEBUG_CONFIG.log(`✅ WalletManager returned:`, {
+                address: walletInfo.address,
+                serializedLength: walletInfo.serializedWallet?.length,
+                privateKeyLength: walletInfo.privateKey?.length
+            });
 
             // Verificar que la dirección coincida con la configuración de red
             const detectedConfig = this.detectNetworkFromAddress(walletInfo.address);
@@ -123,31 +135,78 @@ export class WalletService {
 
             // Guardar wallet completa con clave privada para que el wallet selector la detecte
             if (network === 'shannon') {
-                const timestamp = Date.now();
-                const storageData = {
-                    serialized: walletInfo.privateKey, // Usar la clave privada/mnemónico
-                    privateKey: walletInfo.privateKey, // Guardar la clave privada
-                    network: 'shannon',
-                    timestamp: timestamp,
-                    parsed: { address: walletInfo.address },
-                    mnemonic: walletInfo.privateKey, // También como mnemónico
-                    walletType: 'mnemonic' // Mark as created from mnemonic
-                };
-
-                // Guardar como objeto individual
-                await storageService.set('shannon_wallet', storageData);
-
-                // También guardar en el array de wallets
-                const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
-                const walletArrayItem = {
-                    id: `shannon_${timestamp}`,
-                    ...storageData
-                };
+                // Get the correctly saved wallet data from createWalletDirect
+                const existingWallet = await storageService.get<any>('shannon_wallet');
                 
-                // Verificar que no esté duplicada
-                const isDuplicate = shannonWallets.some(w => w.parsed?.address === walletInfo.address);
-                if (!isDuplicate) {
-                    shannonWallets.push(walletArrayItem);
+                if (existingWallet && existingWallet.mnemonic) {
+                    DEBUG_CONFIG.log('✅ Shannon wallet with mnemonic already exists, preserving it');
+                    DEBUG_CONFIG.log('🔍 DEBUG: Existing wallet data:', {
+                        hasMnemonic: !!existingWallet.mnemonic,
+                        mnemonicPreview: existingWallet.mnemonic?.substring(0, 30) + '...',
+                        serializedPreview: existingWallet.serialized?.substring(0, 30) + '...',
+                        walletType: existingWallet.walletType
+                    });
+                    
+                    // Update the existing wallet to ensure it has all necessary fields
+                    const updatedWallet = {
+                        ...existingWallet,
+                        // Preserve the mnemonic from createWalletDirect
+                        mnemonic: existingWallet.mnemonic,
+                        walletType: 'mnemonic',
+                        // Update other fields that might be needed
+                        parsed: { address: walletInfo.address }
+                    };
+                    
+                    DEBUG_CONFIG.log('🔍 DEBUG: Updated wallet data:', {
+                        hasMnemonic: !!updatedWallet.mnemonic,
+                        mnemonicPreview: updatedWallet.mnemonic?.substring(0, 30) + '...',
+                        serializedPreview: updatedWallet.serialized?.substring(0, 30) + '...',
+                        walletType: updatedWallet.walletType
+                    });
+                    
+                    await storageService.set('shannon_wallet', updatedWallet);
+                    
+                    // Also ensure it's in the array
+                    const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
+                    const existingIndex = shannonWallets.findIndex(w => w.parsed?.address === walletInfo.address);
+                    
+                    if (existingIndex >= 0) {
+                        // Update existing entry
+                        shannonWallets[existingIndex] = {
+                            ...shannonWallets[existingIndex],
+                            mnemonic: existingWallet.mnemonic,
+                            walletType: 'mnemonic'
+                        };
+                    } else {
+                        // Add to array if not exists
+                        shannonWallets.push({
+                            id: `shannon_${Date.now()}`,
+                            ...updatedWallet
+                        });
+                    }
+                    
+                    await storageService.set('shannon_wallets', shannonWallets);
+                } else {
+                    // Fallback: save basic data if createWalletDirect didn't work
+                    DEBUG_CONFIG.log('⚠️ No mnemonic wallet found, saving basic data');
+                    const timestamp = Date.now();
+                    const storageData = {
+                        serialized: walletInfo.privateKey,
+                        privateKey: walletInfo.privateKey,
+                        network: 'shannon',
+                        timestamp: timestamp,
+                        parsed: { address: walletInfo.address },
+                        mnemonic: walletInfo.privateKey,
+                        walletType: 'mnemonic'
+                    };
+
+                    await storageService.set('shannon_wallet', storageData);
+                    
+                    const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
+                    shannonWallets.push({
+                        id: `shannon_${timestamp}`,
+                        ...storageData
+                    });
                     await storageService.set('shannon_wallets', shannonWallets);
                 }
 
@@ -155,7 +214,7 @@ export class WalletService {
                 
                 // Trigger storage update event for wallet selector
                 window.dispatchEvent(new CustomEvent('storage_updated', {
-                    detail: { key: 'shannon_wallet', value: JSON.stringify(storageData) }
+                    detail: { key: 'shannon_wallet', value: 'updated' }
                 }));
             }
 
@@ -558,6 +617,54 @@ export class WalletService {
             this.currentWalletAddress = address;
             storageService.set(STORAGE_KEYS.WALLET_ADDRESS, address);
 
+            // CRITICAL FIX: Save Shannon mnemonic wallet data to storage
+            if (code && !code.startsWith('{')) {
+                // If it's a mnemonic (not JSON), save it properly
+                const words = code.trim().split(/\s+/);
+                if (words.length === 12 || words.length === 24) {
+                    DEBUG_CONFIG.log('💾 Saving Shannon mnemonic wallet to storage');
+                    
+                    const timestamp = Date.now();
+                    const walletObj = {
+                        id: `shannon_${timestamp}`,
+                        privateKey: code.trim(),
+                        serialized: code.trim(),
+                        network: "shannon",
+                        timestamp: timestamp,
+                        parsed: { address },
+                        mnemonic: code.trim(),
+                        walletType: 'mnemonic' // Mark as imported from mnemonic
+                    };
+
+                    // Save to shannon_wallets array
+                    const existingWallets = await storageService.get<Array<any>>('shannon_wallets') || [];
+                    
+                    // Check if this wallet already exists (avoid duplicates)
+                    const isDuplicate = existingWallets.some((w: any) => 
+                        w.parsed?.address === address
+                    );
+                    
+                    if (!isDuplicate) {
+                        await storageService.set('shannon_wallets', [...existingWallets, walletObj]);
+                        DEBUG_CONFIG.log("✅ Shannon mnemonic wallet saved to shannon_wallets array");
+                    } else {
+                        DEBUG_CONFIG.log("⚠️ Shannon wallet already exists in array, skipping duplicate");
+                    }
+
+                    // Save to shannon_wallet (single object)
+                    await storageService.set('shannon_wallet', {
+                        serialized: code.trim(),
+                        privateKey: code.trim(),
+                        network: "shannon",
+                        timestamp: timestamp,
+                        parsed: { address },
+                        mnemonic: code.trim(),
+                        walletType: 'mnemonic' // Mark as imported from mnemonic
+                    });
+                    DEBUG_CONFIG.log("✅ Shannon mnemonic wallet saved to shannon_wallet");
+                }
+            }
+
             let balance = '0';
             try {
                 balance = await this.getBalance(address);
@@ -926,15 +1033,41 @@ export class WalletService {
 
     /**
      * Obtiene la clave privada de Shannon desde los datos almacenados
+     * @param address - Dirección específica de la wallet (opcional)
      * @returns Promise<string | null> - Clave privada en formato hex o null si no se encuentra
      */
-    async getShannonPrivateKey(): Promise<string | null> {
+    async getShannonPrivateKey(address?: string): Promise<string | null> {
         try {
-            // Get Shannon wallet from storage
-            const shannonWallet = await storageService.get<any>('shannon_wallet');
+            let shannonWallet: any = null;
+
+            // If specific address is provided, search for that wallet
+            if (address) {
+                DEBUG_CONFIG.log(`🔍 Buscando wallet Shannon específica para dirección: ${address}`);
+                
+                // First check in shannon_wallets array
+                const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
+                const foundInArray = shannonWallets.find(wallet => 
+                    wallet.parsed?.address === address
+                );
+                
+                if (foundInArray) {
+                    shannonWallet = foundInArray;
+                    DEBUG_CONFIG.log('✅ Wallet encontrada en shannon_wallets array');
+                } else {
+                    // Check in single shannon_wallet if address matches
+                    const singleWallet = await storageService.get<any>('shannon_wallet');
+                    if (singleWallet && singleWallet.parsed?.address === address) {
+                        shannonWallet = singleWallet;
+                        DEBUG_CONFIG.log('✅ Wallet encontrada en shannon_wallet');
+                    }
+                }
+            } else {
+                // Fallback to default behavior (get single shannon_wallet)
+                shannonWallet = await storageService.get<any>('shannon_wallet');
+            }
 
             if (!shannonWallet) {
-                console.warn('❌ No se encontró wallet Shannon en el storage');
+                console.warn(`❌ No se encontró wallet Shannon${address ? ` para dirección ${address}` : ''} en el storage`);
                 return null;
             }
 
@@ -1002,20 +1135,18 @@ export class WalletService {
                         console.warn('⚠️ General decryption error:', decryptError);
                     }
                 } else {
-                    // Check if it's a hex private key (64 characters)
-                    const cleanHex = shannonWallet.serialized.trim();
-                    if (cleanHex.length === 64 && /^[0-9a-fA-F]+$/.test(cleanHex)) {
-                        console.log('🔍 DEBUG: Detected 64-char hex private key in serialized field');
-                        console.log('⚠️ This wallet was imported from a hex private key - no mnemonic available');
-                        return "⚠️ No mnemonic phrase available\n\nThis wallet was imported using a hex private key, not a mnemonic phrase.\n\nMnemonic phrases can only be shown for wallets that were:\n• Created using wallet generation\n• Imported using a 12/24-word mnemonic phrase\n\nYour wallet is secure, but the original mnemonic phrase is not recoverable from a hex private key.";
-                    } else {
-                        console.log('🔍 DEBUG: Serialized data is not recognized format:', {
-                            dataPreview: shannonWallet.serialized.substring(0, 50) + '...',
-                            length: shannonWallet.serialized.length,
-                            startsWithBrace: shannonWallet.serialized.startsWith('{'),
-                            isHex: /^[0-9a-fA-F]+$/.test(cleanHex)
-                        });
+                    // Only check for hex private key if walletType is NOT 'mnemonic'
+                    if (shannonWallet.walletType !== 'mnemonic') {
+                        // Check if it's a hex private key (64 characters)
+                        const cleanHex = shannonWallet.serialized.trim();
+                        if (cleanHex.length === 64 && /^[0-9a-fA-F]+$/.test(cleanHex)) {
+                            console.log('🔍 DEBUG: Detected 64-char hex private key in serialized field');
+                            console.log('⚠️ This wallet was imported from a hex private key - no mnemonic available');
+                            return "⚠️ No mnemonic phrase available\n\nThis wallet was imported using a hex private key, not a mnemonic phrase.\n\nMnemonic phrases can only be shown for wallets that were:\n• Created using wallet generation\n• Imported using a 12/24-word mnemonic phrase\n\nYour wallet is secure, but the original mnemonic phrase is not recoverable from a hex private key.";
+                        }
                     }
+                    
+                    console.log('🔍 DEBUG: Serialized data is not recognized format');
                 }
             }
 

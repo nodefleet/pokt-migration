@@ -169,7 +169,7 @@ const WalletSelector: React.FC<WalletSelectorProps> = ({
                 DEBUG_CONFIG.log('🔑 Obtenida clave privada de Morse');
             } else {
                 // Obtener clave privada de Shannon
-                privateKey = await walletService.getShannonPrivateKey();
+                privateKey = await walletService.getShannonPrivateKey(address);
                 DEBUG_CONFIG.log('🔑 Obtenida clave privada de Shannon');
             }
 

@@ -233,6 +233,11 @@ export class WalletManager {
             // Si es Shannon, usar la función directa de ShannonWallet (sin hooks)
             if (this.networkType === 'shannon') {
                 DEBUG_CONFIG.log("🔵 Usando ShannonWallet.createWalletDirect para crear wallet");
+                DEBUG_CONFIG.log("🔍 DEBUG: Current network state:", {
+                    networkType: this.networkType,
+                    networkMode: this.networkMode,
+                    isMainnet: this.networkMode === 'MAINNET'
+                });
 
                 // Llamar a la función directa que no usa hooks
                 const result = await createWalletDirect(
@@ -241,6 +246,12 @@ export class WalletManager {
                 );
 
                 DEBUG_CONFIG.log("✅ Wallet creada exitosamente con ShannonWallet:", result.address);
+                DEBUG_CONFIG.log("🔍 DEBUG: Result from createWalletDirect:", {
+                    address: result.address,
+                    serializedPreview: result.serialized?.substring(0, 50) + '...',
+                    serializedLength: result.serialized?.length,
+                    isMainnet: result.isMainnet
+                });
 
                 // Desencriptar para obtener el mnemónico
                 const walletInfo = await decryptWallet(result.serialized, password);

@@ -31,8 +31,66 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
     const [morseWalletList, setMorseWalletList] = useState<any[]>([]);
     const [shannonWalletList, setShannonWalletList] = useState<any[]>([]);
 
+    // Shannon wallet requirement workflow
+    const [hasShannonWallet, setHasShannonWallet] = useState(false);
+    const [checkingShannon, setCheckingShannon] = useState(true);
+    const [showShannonCreatedMessage, setShowShannonCreatedMessage] = useState(false);
+
     const navigate = useNavigate();
     const location = useLocation();
+
+    // Check for existing Shannon wallets
+    const checkShannonWallets = async () => {
+        try {
+            setCheckingShannon(true);
+            
+            // Check both storage locations for Shannon wallets
+            const shannonWallet = await storageService.get<any>('shannon_wallet');
+            const shannonWallets = await storageService.get<any[]>('shannon_wallets') || [];
+            
+            const hasShannon = (shannonWallet && shannonWallet.parsed?.address) || 
+                             (shannonWallets.length > 0 && shannonWallets.some(w => w.parsed?.address));
+            
+            console.log('🔍 Shannon wallet check:', {
+                hasShannon,
+                singleWallet: !!shannonWallet,
+                arrayWallets: shannonWallets.length
+            });
+            
+            setHasShannonWallet(hasShannon);
+        } catch (error) {
+            console.error('Error checking Shannon wallets:', error);
+            setHasShannonWallet(false);
+        } finally {
+            setCheckingShannon(false);
+        }
+    };
+
+    // Check Shannon wallets on component mount
+    useEffect(() => {
+        checkShannonWallets();
+
+        // Listen for wallet updates
+        const handleWalletUpdate = () => {
+            console.log('🔄 Wallet update detected, rechecking Shannon wallets');
+            checkShannonWallets();
+        };
+
+        window.addEventListener('storage_updated', handleWalletUpdate);
+        window.addEventListener('wallets_updated', handleWalletUpdate);
+
+        return () => {
+            window.removeEventListener('storage_updated', handleWalletUpdate);
+            window.removeEventListener('wallets_updated', handleWalletUpdate);
+        };
+    }, []);
+
+    // Clear success message when component unmounts
+    useEffect(() => {
+        return () => {
+            setShowShannonCreatedMessage(false);
+        };
+    }, []);
 
     // Leer parámetros de la URL
     useEffect(() => {
@@ -242,6 +300,10 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
     const handleShannonImport = async () => {
         setError(null);
+        
+        // Clear any existing success message when starting import
+        setShowShannonCreatedMessage(false);
+        
         if (!shannonInput.trim()) {
             setError('Please enter a valid value: mnemonic, private key or JSON');
             return;
@@ -327,8 +389,17 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
             setShannonWalletList(existing);
 
+            // Recheck Shannon wallets after successful import
+            await checkShannonWallets();
+
             // Reset
             setShannonInput('');
+            
+            // Hide create message if visible (user imported instead of created)
+            if (showShannonCreatedMessage) {
+                setShowShannonCreatedMessage(false);
+            }
+            
             console.log("Shannon Wallet imported successfully via main.tsx");
         } catch (error: any) {
             console.error('Error importing Shannon wallet:', error);
@@ -340,6 +411,10 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
 
     const handleCreateWallet = async (password: string) => {
         setError(null);
+        
+        // Clear any existing success message when starting new creation
+        setShowShannonCreatedMessage(false);
+        
         if (!password) {
             setError('Please enter a password');
             return;
@@ -355,6 +430,17 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             // Call onCreateWallet from main.tsx instead of using the direct hook
             await onCreateWallet(password, 'shannon');
             console.log("Shannon Wallet created successfully via main.tsx");
+            
+            // Recheck Shannon wallets after successful creation
+            await checkShannonWallets();
+            
+            // Show the mnemonic security reminder message
+            setShowShannonCreatedMessage(true);
+            
+            // Auto-hide the message after 10 seconds
+            setTimeout(() => {
+                setShowShannonCreatedMessage(false);
+            }, 10000);
         } catch (error: any) {
             console.error('Error creating Shannon wallet:', error);
             setError(error.message || 'Error creating Shannon wallet');
@@ -446,6 +532,42 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                 </motion.div>
             )}
 
+            {/* Shannon Created Success Message */}
+            {showShannonCreatedMessage && (
+                <motion.div
+                    className="mb-6 bg-green-900/50 text-green-300 p-6 rounded-xl border border-green-700/50 flex items-start"
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4 }}
+                >
+                    <i className="fas fa-check-circle text-green-400 text-2xl mr-4 mt-1"></i>
+                    <div className="flex-1">
+                        <h3 className="font-semibold mb-2 text-xl">Shannon Wallet Created Successfully! 🎉</h3>
+                        <div className="bg-green-800/30 border border-green-700 rounded-lg p-4 mb-3">
+                            <p className="text-green-200 font-semibold mb-2">
+                                <i className="fas fa-exclamation-triangle mr-2"></i>
+                                IMPORTANT: Save Your Secret Phrase Now!
+                            </p>
+                            <ul className="text-green-200 text-sm space-y-1 list-disc pl-5">
+                                <li>Your 24-word secret phrase is the ONLY way to recover your wallet</li>
+                                <li>Write it down on paper and store it securely offline</li>
+                                <li>Never share your secret phrase with anyone</li>
+                                <li>Consider making multiple backup copies in safe locations</li>
+                            </ul>
+                        </div>
+                        <p className="text-sm text-green-300">
+                            You can view your secret phrase anytime by clicking the wallet selector above and selecting "View Secret Phrase".
+                        </p>
+                        <button
+                            onClick={() => setShowShannonCreatedMessage(false)}
+                            className="mt-3 px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-lg text-sm transition-colors"
+                        >
+                            I understand, dismiss this message
+                        </button>
+                    </div>
+                </motion.div>
+            )}
+
             {/* Morse Red Warning Banner */}
             {showMorseWarning && (
                 <motion.div
@@ -468,30 +590,52 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             )}
 
             <motion.div className="space-y-6" layout>
-                {/* Morse Section */}
-                <motion.div className="relative" layout>
-                    <motion.button
-                        className={`w-full p-4 rounded-xl border-2 ${morseOpen ? 'border-yellow-500 bg-yellow-500/10' : 'border-yellow-400/30 hover:border-yellow-400'
-                            } transition-colors duration-300 flex justify-between items-center group`}
-                        onClick={toggleMorse}
-                        whileHover={{ scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                        layout
+                {/* Shannon Requirement Banner */}
+                {!checkingShannon && !hasShannonWallet && (
+                    <motion.div
+                        className="mb-6 bg-blue-900/50 text-blue-300 p-4 rounded-xl border border-blue-700/50 flex items-start"
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.4 }}
                     >
-                        <span className="text-xl font-semibold text-yellow-400 group-hover:text-yellow-300">
-                            <i className="fas fa-bolt mr-2"></i>
-                            Morse
-                            <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-900/70 text-yellow-300 border border-yellow-700/50">
-                                In migration
-                            </span>
-                        </span>
-                        <motion.span
-                            animate={{ rotate: morseOpen ? 180 : 0 }}
-                            transition={{ duration: 0.2 }}
+                        <i className="fas fa-info-circle text-blue-400 text-xl mr-4 mt-1"></i>
+                        <div>
+                            <h3 className="font-semibold mb-1">Shannon Wallet Required</h3>
+                            <p className="text-sm">
+                                To ensure a smooth migration experience, you must first create or import a Shannon wallet before importing Morse wallets.
+                            </p>
+                            <p className="text-sm mt-2">
+                                Please start by creating a new Shannon wallet or importing an existing one below.
+                            </p>
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Morse Section - Only show if Shannon wallet exists */}
+                {hasShannonWallet && (
+                    <motion.div className="relative" layout>
+                        <motion.button
+                            className={`w-full p-4 rounded-xl border-2 ${morseOpen ? 'border-yellow-500 bg-yellow-500/10' : 'border-yellow-400/30 hover:border-yellow-400'
+                                } transition-colors duration-300 flex justify-between items-center group`}
+                            onClick={toggleMorse}
+                            whileHover={{ scale: 1.01 }}
+                            whileTap={{ scale: 0.99 }}
+                            layout
                         >
-                            ▼
-                        </motion.span>
-                    </motion.button>
+                            <span className="text-xl font-semibold text-yellow-400 group-hover:text-yellow-300">
+                                <i className="fas fa-bolt mr-2"></i>
+                                Morse
+                                <span className="ml-2 px-2 py-0.5 text-xs rounded-full bg-yellow-900/70 text-yellow-300 border border-yellow-700/50">
+                                    In migration
+                                </span>
+                            </span>
+                            <motion.span
+                                animate={{ rotate: morseOpen ? 180 : 0 }}
+                                transition={{ duration: 0.2 }}
+                            >
+                                ▼
+                            </motion.span>
+                        </motion.button>
 
                     <AnimatePresence mode="wait">
                         {morseOpen && (
@@ -651,6 +795,7 @@ PrivateKey1
                         )}
                     </AnimatePresence>
                 </motion.div>
+                )}
 
                 {/* Shannon Section */}
                 <motion.div className="relative" layout>

@@ -19,7 +19,7 @@ import { storageService } from './controller/storage.service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 // Importar Firebase Analytics
 import { analytics, trackEvent } from './firebase';
-import { DEBUG_CONFIG } from './controller/config';
+import { DEBUG_CONFIG, STORAGE_KEYS } from './controller/config';
 
 // Ya no es necesario configurar Buffer aquí, ya está en polyfills.ts
 // import { Buffer } from 'buffer';
@@ -372,11 +372,16 @@ const App: React.FC = () => {
                 await walletService.init();
             }
 
+            // Check current storage state
+            const storedIsMainnet = await storageService.get<boolean>('isMainnet');
+            DEBUG_CONFIG.log(`🔍 DEBUG: Storage isMainnet: ${storedIsMainnet}`);
+
             // Asegurar que estamos creando una wallet Shannon (por defecto)
             const targetNetwork = network || 'shannon';
-            const targetIsMainnet = false; // Crear como testnet por defecto
+            // FIX: Use the stored isMainnet value instead of hardcoded false
+            const targetIsMainnet = storedIsMainnet !== null ? storedIsMainnet : false;
 
-            DEBUG_CONFIG.log(`🎯 Target configuration: ${targetNetwork} ${targetIsMainnet ? 'mainnet' : 'testnet'}`);
+            DEBUG_CONFIG.log(`🎯 Target configuration: ${targetNetwork} ${targetIsMainnet ? 'mainnet' : 'testnet'} (from storage: ${storedIsMainnet})`);
 
             // Track wallet creation event
             trackEvent('wallet_created', {
@@ -385,6 +390,7 @@ const App: React.FC = () => {
             });
 
             // Usar el método createWallet del walletService
+            DEBUG_CONFIG.log(`🔄 Calling walletService.createWallet with: password, ${targetNetwork}, ${targetIsMainnet}`);
             const walletInfo = await walletService.createWallet(password, targetNetwork, targetIsMainnet);
             DEBUG_CONFIG.log(`✅ Wallet created:`, walletInfo);
 
@@ -441,19 +447,33 @@ const App: React.FC = () => {
             if (network) {
                 // Network-specific logout
                 if (network === 'morse') {
-                    // Clear only Morse wallet data
+                    // Morse logout: Clear only Morse wallet data
                     await storageService.remove('morse_wallet');
                     await storageService.remove('morse_wallets');
-                    DEBUG_CONFIG.log('✅ Morse wallet logout completed');
+                    DEBUG_CONFIG.log('✅ Morse wallet logout completed - Shannon wallet preserved');
                 } else if (network === 'shannon') {
-                    // Clear only Shannon wallet data
+                    // Shannon logout: Clear ALL wallet data (Shannon + all Morse)
+                    // This is because Shannon is the primary wallet in our workflow
+                    DEBUG_CONFIG.log('🔄 Shannon logout - clearing ALL wallets (Shannon is primary)');
+                    
+                    // Clear Shannon data
                     await storageService.remove('shannon_wallet');
                     await storageService.remove('shannon_wallets');
-                    DEBUG_CONFIG.log('✅ Shannon wallet logout completed');
+                    
+                    // Clear all Morse data too (since they depend on Shannon)
+                    await storageService.remove('morse_wallet');
+                    await storageService.remove('morse_wallets');
+                    
+                    // Clear all wallet-related storage
+                    await storageService.remove(STORAGE_KEYS.WALLET_ADDRESS);
+                    await storageService.remove(STORAGE_KEYS.NETWORK_TYPE);
+                    await storageService.remove(STORAGE_KEYS.NETWORK);
+                    
+                    DEBUG_CONFIG.log('✅ Complete logout - all wallets cleared');
                 }
 
-                // If we're currently on the logged out network, clear current state
-                if (networkType === network) {
+                // If we're currently on the logged out network, or if Shannon was logged out, clear current state
+                if (networkType === network || network === 'shannon') {
                     setState({ walletAddress: null, showTransactions: false });
                     setBalance('0');
                     setTransactions([]);

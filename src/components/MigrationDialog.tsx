@@ -29,6 +29,9 @@ interface WalletOption {
     address: string;
     type: 'morse' | 'shannon';
     privateKey?: string;
+    isArmored?: boolean;
+    armoredKey?: any;
+    isPKK?: boolean;
 }
 
 const MigrationDialog: React.FC<MigrationDialogProps> = ({
@@ -46,6 +49,10 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
     const [error, setError] = useState<React.ReactNode | null>(null);
     const [successMessage, setSuccessMessage] = useState<React.ReactNode | null>(null);
     const [migrationResult, setMigrationResult] = useState<any>(null);
+    
+    // Passphrase handling for armored keys
+    const [armoredKeyPassphrases, setArmoredKeyPassphrases] = useState<{[walletId: string]: string}>({});
+    const [showPassphraseInputs, setShowPassphraseInputs] = useState<{[walletId: string]: boolean}>({});
 
     const migrationService = new MigrationService();
 
@@ -385,9 +392,17 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                             address: shannonWallet.address,
                             signature: shannonSignature || (shannonWallet.privateKey || '')
                         },
-                        network: network
+                        network: network,
+                        // Include passphrase if provided for this wallet
+                        ...(armoredKeyPassphrases[wallet.address] && { passphrase: armoredKeyPassphrases[wallet.address] })
                     };
 
+                    console.log(`🔐 Migration payload for wallet ${wallet.address}:`, {
+                        hasPassphrase: !!armoredPayload.passphrase,
+                        passphrase: armoredPayload.passphrase ? '[REDACTED]' : 'none',
+                        morseAddress: armoredPayload.morseAddress,
+                        network: armoredPayload.network
+                    });
 
                     
                     const response = await fetch(`${backendUrl}/api/migration/migrate-armored`, {
@@ -796,6 +811,20 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                         </div>
                     </div>
 
+                    {/* Armored Key Info Banner */}
+                    <div className="bg-gradient-to-r from-yellow-500/10 to-amber-500/10 border border-yellow-500/20 rounded-xl p-3">
+                        <div className="flex items-start gap-2">
+                            <i className="fas fa-shield-alt text-yellow-400 flex-shrink-0 text-sm mt-0.5"></i>
+                            <div>
+                                <p className="text-yellow-200/90 text-xs font-medium mb-1">Armored Key Information</p>
+                                <p className="text-yellow-200/70 text-xs">
+                                    If you have armored keys (PKK format), you may need to provide a passphrase. 
+                                    Most armored keys don't require a passphrase, so leave the field empty unless you specifically set one during creation.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Estado de las wallets - SIEMPRE VISIBLE */}
                     <div className="space-y-2">
                         {/* Morse wallet status */}
@@ -920,21 +949,69 @@ const MigrationDialog: React.FC<MigrationDialogProps> = ({
                                     <p className="text-orange-400/60 text-xs">No Morse wallets found</p>
                                 )}
 
-                                <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
+                                <div className="grid gap-3 max-h-64 overflow-y-auto pr-1">
                                     {morseWallets.map(wallet => {
                                         const selected = selectedMorseWallets.includes(wallet.id);
+                                        
+                                        // Check if this wallet is an armored key (PKK format)
+                                        let isArmoredKey = false;
+                                        try {
+                                            const privateKeyData = wallet.privateKey as string;
+                                            const parsed = JSON.parse(privateKeyData);
+                                            isArmoredKey = !!(parsed.ppkData || (parsed.kdf && parsed.salt && parsed.ciphertext));
+                                        } catch (e) {
+                                            // Not JSON, not armored
+                                        }
+                                        
                                         return (
-                                            <button
-                                                key={wallet.id}
-                                                onClick={() => {
-                                                    setSelectedMorseWallets(prev => selected ? prev.filter(id => id !== wallet.id) : [...prev, wallet.id]);
-                                                }}
-                                                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left ${selected ? 'bg-orange-600/20 border-orange-500/50' : 'bg-gray-800/50 border-gray-600/30 hover:bg-gray-700/40'}`}
-                                                disabled={isLoading}
-                                            >
-                                                <span className="text-xs truncate mr-2">{wallet.address}</span>
-                                                {selected && <CheckCircle className="w-3 h-3 text-orange-300" />}
-                                            </button>
+                                            <div key={wallet.id} className="space-y-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedMorseWallets(prev => selected ? prev.filter(id => id !== wallet.id) : [...prev, wallet.id]);
+                                                    }}
+                                                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border transition-all text-left ${selected ? 'bg-orange-600/20 border-orange-500/50' : 'bg-gray-800/50 border-gray-600/30 hover:bg-gray-700/40'}`}
+                                                    disabled={isLoading}
+                                                >
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-xs truncate block">{wallet.address}</span>
+                                                        {isArmoredKey && (
+                                                            <span className="text-xs text-yellow-400 mt-1 block">
+                                                                <i className="fas fa-shield-alt mr-1"></i>
+                                                                Armored Key (may require passphrase)
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    {selected && <CheckCircle className="w-3 h-3 text-orange-300 flex-shrink-0" />}
+                                                </button>
+                                                
+                                                {/* Passphrase input for armored keys */}
+                                                {selected && isArmoredKey && (
+                                                    <div className="ml-4 p-3 bg-yellow-900/20 border border-yellow-700/30 rounded-lg">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <i className="fas fa-key text-yellow-400 text-sm"></i>
+                                                            <label className="text-xs text-yellow-300 font-medium">
+                                                                Armored Key Passphrase (if required):
+                                                            </label>
+                                                        </div>
+                                                        <input
+                                                            type="password"
+                                                            value={armoredKeyPassphrases[wallet.address] || ''}
+                                                            onChange={(e) => {
+                                                                setArmoredKeyPassphrases(prev => ({
+                                                                    ...prev,
+                                                                    [wallet.address]: e.target.value
+                                                                }));
+                                                            }}
+                                                            placeholder="Leave empty if no passphrase required"
+                                                            className="w-full px-2 py-1 text-xs bg-gray-800 border border-gray-600 rounded text-white placeholder-gray-400 focus:border-yellow-500 focus:outline-none"
+                                                            disabled={isLoading}
+                                                        />
+                                                        <p className="text-xs text-yellow-400/70 mt-1">
+                                                            Only enter a passphrase if your armored key was created with one. Many armored keys don't require a passphrase.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                            </div>
                                         );
                                     })}
                                 </div>

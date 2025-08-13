@@ -66,7 +66,7 @@ const useShannonWalletStore = create<WalletStore>()(
             setWallet: (wallet) => set(wallet),
         }),
         {
-            name: "shannon_wallet",
+            name: "shannon_wallet_store", // Changed to avoid conflict with manual storage
             storage: createJSONStorage(() => safeStorage),
         }
     )
