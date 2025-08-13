@@ -437,10 +437,11 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
             // Show the mnemonic security reminder message
             setShowShannonCreatedMessage(true);
             
-            // Auto-hide the message after 10 seconds
+            // Auto-hide the message after 15 seconds and navigate to dashboard
             setTimeout(() => {
                 setShowShannonCreatedMessage(false);
-            }, 10000);
+                navigate('/wallet');
+            }, 15000);
         } catch (error: any) {
             console.error('Error creating Shannon wallet:', error);
             setError(error.message || 'Error creating Shannon wallet');
@@ -555,15 +556,29 @@ const IndividualImport: React.FC<IndividualImportProps> = ({ onReturn, onWalletI
                                 <li>Consider making multiple backup copies in safe locations</li>
                             </ul>
                         </div>
-                        <p className="text-sm text-green-300">
+                        <p className="text-sm text-green-300 mb-2">
                             You can view your secret phrase anytime by clicking the wallet selector above and selecting "View Secret Phrase".
                         </p>
-                        <button
-                            onClick={() => setShowShannonCreatedMessage(false)}
-                            className="mt-3 px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-lg text-sm transition-colors"
-                        >
-                            I understand, dismiss this message
-                        </button>
+                        <p className="text-xs text-green-400/80">
+                            This message will auto-dismiss and redirect to your dashboard in 15 seconds.
+                        </p>
+                        <div className="mt-3 flex gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowShannonCreatedMessage(false);
+                                    navigate('/wallet');
+                                }}
+                                className="px-4 py-2 bg-green-700 hover:bg-green-600 text-white rounded-lg text-sm transition-colors"
+                            >
+                                Continue to Dashboard
+                            </button>
+                            <button
+                                onClick={() => setShowShannonCreatedMessage(false)}
+                                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg text-sm transition-colors"
+                            >
+                                Stay on Import Page
+                            </button>
+                        </div>
                     </div>
                 </motion.div>
             )}

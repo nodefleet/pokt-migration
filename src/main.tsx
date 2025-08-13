@@ -406,8 +406,15 @@ const App: React.FC = () => {
             DEBUG_CONFIG.log('🔄 Loading wallet data for newly created wallet:', walletInfo.address);
             await loadWalletData(walletInfo.address);
 
-            // Always navigate to dashboard after creating a wallet
-            navigate('/wallet');
+            // For Shannon wallets, don't auto-navigate - let the mnemonic reminder handle navigation
+            // For other wallet types, navigate immediately
+            if (targetNetwork === 'shannon') {
+                DEBUG_CONFIG.log('🔔 Shannon wallet created - will show mnemonic reminder, no auto-navigation');
+                // Don't navigate automatically for Shannon - let the mnemonic reminder popup handle it
+            } else {
+                // Navigate immediately for non-Shannon wallets
+                navigate('/wallet');
+            }
 
             // Trigger wallet selector refresh (always fire this event)
             window.dispatchEvent(new CustomEvent('wallets_updated', {
